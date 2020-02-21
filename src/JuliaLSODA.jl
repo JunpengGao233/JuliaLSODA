@@ -5,6 +5,8 @@ using LinearAlgebra
 using Reexport: @reexport
 @reexport using DiffEqBase
 
+export LSODA
+
 macro defconsts(expr, var)
     expr.head === :vect || error("Use it like `@defconsts [ccmax, el0, h, hmin, hmxi, hu, rc, tn] Ref(0.0)`")
     blk = quote end
@@ -40,5 +42,14 @@ const CM2 = zeros(6)
 
 @defconsts [YH, WM] Ref{Matrix{Float64}}()
 @defconsts [YP1, YP2, EWT, SAVF, ACOR] Ref{Vector{Float64}}()
+
+struct LSODA <: DiffEqBase.AbstractODEAlgorithm
+end
+
+function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
+                            itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
+                            tout=prob.tspan[end], reltol=1e-4, abstol=1e-6,
+                            tcrit#=tstop=#=nothing) where {uType,tType}
+end
 
 end # module
