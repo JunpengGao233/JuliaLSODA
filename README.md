@@ -2,7 +2,7 @@
 
 ## Work In Progress
 
-This repository is a preparation for the [JVODE](https://github.com/YingboMa/JVODE.jl) job. It will be based on the [original fortran version](http://faculty.washington.edu/tlarson/SCICHEM3.0b2/src/lib/util/odepack/lsoda.f)  and the [C version](https://github.com/sdwfrost/liblsoda). 
+This resporitory implements LSODA in pure Julia. This repository is a preparation for future [JVODE](https://github.com/YingboMa/JVODE.jl) work. It is based on the original Fortran and the C LSODA job.
 
 ## References
 
