@@ -46,10 +46,55 @@ const CM2 = zeros(6)
 struct LSODA <: DiffEqBase.AbstractODEAlgorithm
 end
 
+function terminate!(istate::Ref{Int})
+    if ILLIN == 5
+        error("[lsoda] repeated occurrence of illegal input. run aborted.. apparent infinite loop\n")
+    else
+        ILLIN += 1
+        istate = -3
+    end
+end
+
+function terminate2!(y::Vector{Float64}, t::Ref{Float64})
+    yp1 = YH[1]
+    for i in 1:n
+        y[i] = yp1[i]
+    end
+    t = TN
+    ILLIN = 0
+end
+
+function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
+    yp1 = YH[1]
+    for i in 1:n
+        y[i] = yp[i]
+    end
+    t = TN
+    if itask == 4 || itask == 5
+        ihit ? t = tcrit : nothing
+    end
+    istate = 2
+    ILLIN = 0
+end
+
 function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
                             tout=prob.tspan[end], reltol=1e-4, abstol=1e-6,
                             tcrit#=tstop=#=nothing) where {uType,tType}
+@assert 1 <= istate <= 3 "[lsoda] illegal istate = $istate\n"
+@assert !(itask < 1 || itask > 5) "[lsoda] illegal itask = $itask\n"
+@assert !(INIT == 0 &&(istate == 2 || istate == 3)) "[lsoda] istate > 1 but lsoda not initialized"
+
+if istate == 1
+    INIT = 0
+#?
 end
 
+if istate == 1 || istate == 3
+    NTREP = 0
+    @assert neq > 0 "[lsoda] neq = $neq is less than 1\n"
+    @assert !(istate == 3 && neq > n) "[lsoda] istate = 3 and neq increased"
+    
+
+function stoda()
 end # module
