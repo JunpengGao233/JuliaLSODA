@@ -51,7 +51,7 @@ typedef void    (*_lsoda_f) (double, double *, double *, void *);
 
 #include <math.h>
 
-static int 
+static int
 idamax(n, dx, incx)
 	double         *dx;
 	int             n, incx;
@@ -120,7 +120,7 @@ idamax(n, dx, incx)
  * dscal.c *
  ***********/
 
-void 
+void
 dscal(n, da, dx, incx)
 	double          da, *dx;
 	int             n, incx;
@@ -187,7 +187,7 @@ dscal(n, da, dx, incx)
  * ddot.c *
  **********/
 
-static double 
+static double
 ddot(n, dx, incx, dy, incy)
 	double         *dx, *dy;
 	int             n, incx, incy;
@@ -279,7 +279,7 @@ From: tam@dragonfly.wri.com
 To: whitbeck@sanjuan.wrc.unr.edu
 */
 
-static void 
+static void
 daxpy(n, da, dx, incx, dy, incy)
 	double          da, *dx, *dy;
 	int             n, incx, incy;
@@ -366,7 +366,7 @@ daxpy(n, da, dx, incx, dy, incy)
  * dgesl.c *
  ***********/
 
-static void 
+static void
 dgesl(a, n, ipvt, b, job)
 	double        **a, *b;
 	int             n, *ipvt, job;
@@ -467,7 +467,7 @@ dgesl(a, n, ipvt, b, job)
  * dgefa.c *
  ***********/
 
-void 
+void
 dgefa(a, n, ipvt, info)
 	double        **a;
 	int             n, *ipvt, *info;
@@ -845,7 +845,7 @@ void lsoda(_lsoda_f f, int neq, double *y, double *t, double tout, int itol, dou
 		   int iwork1, int iwork2, int iwork5, int iwork6, int iwork7, int iwork8, int iwork9,
 		   double rwork1, double rwork5, double rwork6, double rwork7, void *_data)
 /*
-void 
+void
 lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
       iopt, jt, iwork1, iwork2, iwork5, iwork6, iwork7, iwork8,
       iwork9, rwork1, rwork5, rwork6, rwork7, _data)
@@ -988,7 +988,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 			}
 		}
 		/* end if ( iopt == 0 )   */
-		 /* Optional inputs.   */ 
+		 /* Optional inputs.   */
 		else {		/* if ( iopt = 1 )  */
 			ixpr = iwork5;
 			if (ixpr < 0 || ixpr > 1) {
@@ -1053,7 +1053,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 	}			/* end if ( *istate == 1 || *istate == 3 )   */
 	/*
 	   If *istate = 1, meth is initialized to 1.
-	
+
 	   Also allocate memory for yh, wm, ewt, savf, acor, ipvt.
 	*/
 	if (*istate == 1) {
@@ -1377,9 +1377,9 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 	   Block e.
 	   The next block is normally executed for all calls and contains
 	   the call to the one-step core integrator stoda.
-	
+
 	   This is a looping point for the integration steps.
-	
+
 	   First check for too many steps being taken, update ewt ( if not at
 	   start of problem).  Check for too much accuracy being requested, and
 	   check for h below the roundoff level in *t.
@@ -1838,7 +1838,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 		   to try the step again.  Compute the optimum step size for this or
 		   one lower.  After 2 or more failures, h is forced to decrease
 		   by a factor of 0.2 or less.
-		 */ 
+		 */
 		else {
 			kflag--;
 			tn = told;
@@ -1881,7 +1881,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 			   derivative is recomputed, and the order is set to 1.  Then
 			   h is reduced by a factor of 10, and the step is retried,
 			   until it succeeds or h reaches hmin.
-			 */ 
+			 */
 			else {
 				if (kflag == -10) {
 					kflag = -1;
@@ -2354,7 +2354,7 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 		   In the case of the chord method, compute the corrector error,
 		   and solve the linear system with that as right-hand side and
 		   P as coefficient matrix.
-		 */ 
+		 */
 		else {
 			yp1 = yh[2];
 			for (i = 1; i <= n; i++)
