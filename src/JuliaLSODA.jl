@@ -57,22 +57,22 @@ function terminate!(istate::Ref{Int})
 end
 
 function terminate2!(y::Vector{Float64}, t::Ref{Float64})
-    yp1 = YH[1]
+    YP1[] = YH[][1]
     for i in 1:n
-        y[i] = yp1[i]
+        y[i] = YP1[][i]
     end
-    t[] = TN
+    t[] = TN[]
     ILLIN[] = 0
 end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
-    yp1 = YH[1]
+    YP1[] = YH[][1]
     for i in 1:n
-        y[i] = yp[i]
+        y[i] = YP1[i]
     end
-    t = TN
+    t[] = TN[]
     if itask == 4 || itask == 5
-        ihit ? t = tcrit : nothing
+        ihit && (t = tcrit)
     end
     istate = 2
     ILLIN = 0
@@ -84,34 +84,137 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             tcrit#=tstop=#=nothing) where {uType,tType}
     mxstp0 = 500
     mxhnl0 = 10
-    1 <= istate <= 3 || error("[lsoda] illegal istate = $istate\n")
-    @assert !(itask < 1 || itask > 5) "[lsoda] illegal itask = $itask\n"
-    @assert !(INIT[] == 0 &&(istate == 2 || istate == 3)) "[lsoda] istate > 1 but lsoda not initialized"
+    1 <= istate[] <= 3 || (@warn("[lsoda] illegal istate = $istate\n") || terminate(istate[]))
+    !(itask < 1 || itask > 5) || (@warn( "[lsoda] illegal itask = $itask\n") || terminate(istate[]))
+    !(INIT[] == 0 &&(istate[] == 2 || istate[] == 3)) || (@warn("[lsoda] istate > 1 but lsoda not initialized") || terminate(istate[]))
 
-    t = Ref(first(prob.tspan))
-
-    if istate[] == 1
-        INIT[] = 0
-    end
-
-    if istate[] == 1 || istate[] == 3
-        NTREP[] = 0
-        @assert neq > 0 "[lsoda] neq = $neq is less than 1\n"
-        @assert !(istate[] == 3 && neq > n) "[lsoda] istate = 3 and neq increased"
-    end
+    t = Ref(first(prob.tspan))    
+    sizey = size(prob.u0)
+    neq = sizey[0] * sizey[1]
+    local y = prob.u0
 
     if istate[] == 1
 		INIT[] = 0
 		if tout == t[]
 			NTREP[] += 1
-			ntrep < 5 && return
+			NTREP[] < 5 && return
 			@warn("[lsoda] repeated calls with istate = 1 and tout = t. run aborted.. apparent infinite loop\n")
 			return
         end
     end
+    ###Block b ###
+    
+    if iopt == false 
+        IXPR[] = 0
+		MXSTEP[] = mxstp0
+		MXHNIL = mxhnl0
+		HMXI[] = 0.0
+		HMIN[] = 0.0
+		if (istate == 1) 
+			local h0 = 0.0;
+			MXORDN[] = MORD[1]
+            MXORDS[] = MORD[2]
+        end
+    #TODO iopt == true
+    end 
+    (istate[] == 3) && (JSTART = -1)
+
+    ### Block c ###
+    if istate[] == 1
+        TN[] = t[]
+        TSW[] = t[]
+        MAXORD[] = MXORDN[]
+        if tcrit != nothing
+            if (tcrit - tout) * (tout - t[]) < 0
+                @warn("tcrit behind tout")
+                terminate(istate[])
+            end
+            if (h0 != 0.0 && (t[] + h0 - tcrit) * h0 > 0.0)
+                h0 = tcrit - t[]
+            end
+        end
+
+        JSTART[] = 0;
+        NHNIL[] = 0;
+        NST[] = 0;
+        NJE[] = 0;
+        NSLAST[] = 0;
+        HU[] = 0.;
+        NQU[] = 0;
+        MUSED[] = 0;
+        MITER[] = 0;
+        CCMAX[] = 0.3;
+        MAXCOR[] = 3;
+        MSBP[] = 20;
+        MXNCF[] = 10;
+
+        #prob.f(du,u,p,t)
+        #(double t, double *y, double *ydot, void *data)
+
+        prob.f(YH[2] + 1, y, 0 #=_data/p?=#, t[])
+        NFE = 1
+        YP1[] = YH[][1]
+        for i in 1:n
+            YP1[][i] = y[i]
+        end
+        NQ = 1
+        H = 1
+        ewset(rtol, atol, y)
+        for i in 1:n
+            if EWT[][i] <= 0
+                @warn("[lsoda] EWT[$i] = $(EWT[][i])")
+                terminate2(y, t[])
+                return
+            end
+            EWT[][i] = 1 / EWT[][i]
+        end
+
+        #compute h0, the first step size, 
+        if h0 == 0.0
+            tdist = abs(tout - t[])
+            w0 = max(abs(t[]), abs(tout))
+            if tdist < 2 *eps() *w0
+                @warn("[lsoda] tout too close to t to start integration")
+                terminate(istate[])
+            end
+            local tol = rtol
+            if tol <= 0.0
+                for i in 1:n
+                    if abs(y[i]) != 0
+                        tol = max(rtol, atol/abs(y[i]))
+                    end
+                end
+            end
+            tol = max(tol, 100 * eps())
+            tol = min(tol, 0.001)
+            sum = vmnorm(n, YH[][2],EWT)
+            sum = 1 / (tol * 100 * eps())
+            h0 = 1 / sqrt(sum)
+            h0 = min(h0, tdist)
+            h0 = h0 * ((tout - t[] >= 0) ? 1 : -1)
+        end
+        rh = abs(h0) * HMXI[]
+        rh > 1 && (h0 /= rh)
+        h = h0
+        YP1[] = YH[][2]
+        for i in 1:n
+            YP1[][i] *= h0
+        end
+    end
+
+    ###Block d###
+
+end
+
+function vmnorm(n::Int, v::Ref{Float64}, w::Ref{Float64})
+end
+
+function ewset(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Ref{Float64})
+    #TODO
 end
 
 function stoda()
+    #TODO
 end
 
 end # module
