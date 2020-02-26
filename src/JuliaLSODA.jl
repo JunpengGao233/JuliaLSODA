@@ -54,6 +54,7 @@ function terminate!(istate::Ref{Int})
         ILLIN[] += 1
         istate[] = -3
     end
+    return
 end
 
 function terminate2!(y::Vector{Float64}, t::Ref{Float64})
@@ -63,6 +64,7 @@ function terminate2!(y::Vector{Float64}, t::Ref{Float64})
     end
     t[] = TN[]
     ILLIN[] = 0
+    return
 end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
@@ -76,6 +78,7 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
     end
     istate = 2
     ILLIN = 0
+    return
 end
 
 function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
@@ -89,9 +92,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
     !(itask < 1 || itask > 5) || (@warn( "[lsoda] illegal itask = $itask\n") || terminate(istate[]))
     !(INIT[] == 0 &&(istate[] == 2 || istate[] == 3)) || (@warn("[lsoda] istate > 1 but lsoda not initialized") || terminate(istate[]))
 
-    t = Ref(first(prob.tspan))    
-    sizey = size(prob.u0)
-    neq = sizey[0] * sizey[1]
+    t = Ref(first(prob.tspan))
+    neq = length(prob.u0)
+    # NOTE!!! this function mutates `prob.u0`
     y = prob.u0
 
     if istate[] == 1
@@ -104,20 +107,20 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
     end
     ###Block b ###
-    
-    if iopt == false 
+
+    if iopt == false
         IXPR[] = 0
 		MXSTEP[] = mxstp0
-		MXHNIL = mxhnl0
+		MXHNIL[] = mxhnl0
 		HMXI[] = 0.0
 		HMIN[] = 0.0
-		if (istate == 1) 
-			h0 = 0.0;
+		if (istate == 1)
+			h0 = 0.0
 			MXORDN[] = MORD[1]
             MXORDS[] = MORD[2]
         end
     #TODO iopt == true
-    end 
+    end
     (istate[] == 3) && (JSTART = -1)
 
     ### Block c ###
@@ -128,71 +131,74 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         if tcrit != nothing
             if (tcrit - tout) * (tout - t[]) < 0
                 @warn("tcrit behind tout")
-                terminate(istate[])
+                terminate!(istate)
             end
             if (h0 != 0.0 && (t[] + h0 - tcrit) * h0 > 0.0)
                 h0 = tcrit - t[]
             end
         end
 
-        JSTART[] = 0;
-        NHNIL[] = 0;
-        NST[] = 0;
-        NJE[] = 0;
-        NSLAST[] = 0;
-        HU[] = 0.;
-        NQU[] = 0;
-        MUSED[] = 0;
-        MITER[] = 0;
-        CCMAX[] = 0.3;
-        MAXCOR[] = 3;
-        MSBP[] = 20;
-        MXNCF[] = 10;
+        JSTART[] = 0
+        NHNIL[] = 0
+        NST[] = 0
+        NJE[] = 0
+        NSLAST[] = 0
+        HU[] = 0.0
+        NQU[] = 0
+        MUSED[] = 0
+        MITER[] = 0
+        CCMAX[] = 0.3
+        MAXCOR[] = 3
+        MSBP[] = 20
+        MXNCF[] = 10
 
         #prob.f(du,u,p,t)
         #(double t, double *y, double *ydot, void *data)
 
-        prob.f(YH[][2,:], y, 0 #=_data/p?=#, t[])
+        prob.f(YH[][2,:], y, prob.p, t[])
         NFE = 1
         YP1[] = YH[][1,:]
-        for i in 1:n
+        for i in 1:neq
             YP1[][i] = y[i]
         end
-        NQ = 1
-        H = 1
-        ewset(rtol, atol, y)
-        for i in 1:n
+        NQ[] = 1
+        H[] = 1
+        EWT[] = similar(y)
+        ewset!(rtol, atol, y)
+        for i in 1:neq
             if EWT[][i] <= 0
                 @warn("[lsoda] EWT[$i] = $(EWT[][i])")
-                terminate2(y, t[])
+                terminate2!(y, t)
                 return
             end
             EWT[][i] = 1 / EWT[][i]
         end
 
-        #compute h0, the first step size, 
+        #compute h0, the first step size,
         if h0 == 0.0
             tdist = abs(tout - t[])
             w0 = max(abs(t[]), abs(tout))
-            if tdist < 2 *eps() *w0
+            if tdist < 2 * eps() *w0
                 @warn("[lsoda] tout too close to t to start integration")
-                terminate(istate[])
+                terminate!(istate)
             end
-            local tol = rtol
+            tol = rtol
             if tol <= 0.0
                 for i in 1:n
-                    if abs(y[i]) != 0
-                        tol = max(rtol, atol/abs(y[i]))
+                    ayi = abs(y[i])
+                    if ayi != 0
+                        tol = max(rtol, atol/ayi)
                     end
                 end
             end
             tol = max(tol, 100 * eps())
             tol = min(tol, 0.001)
-            sum = vmnorm(n, YH[2,:],EWT)
+            sum = vmnorm(n, YH[2,:], EWT)
             sum = 1 / (tol * 100 * eps())
             h0 = 1 / sqrt(sum)
             h0 = min(h0, tdist)
-            h0 = h0 * ((tout - t[] >= 0) ? 1 : -1)
+            # h0 = h0 * ((tout - t[] >= 0) ? 1 : -1)
+            h0 = copysign(h0, tout - t[])
         end
         rh = abs(h0) * HMXI[]
         rh > 1 && (h0 /= rh)
@@ -208,10 +214,10 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         NSLAST[] = NST[]
         if itask == 1
             if ((TN[] - tout) * H[] >= 0)
-                intdy(tout, 0, y, iflag[])
+                intdy!(tout, 0, y, iflag[])
                 if iflag[] != 0
                     @warn("[lsoda] trouble from intdy, itask = $itask, tout = $tout\n")
-                    terminate(istate[])
+                    terminate!(istate)
                 end
                 t[] = tout
                 istate[] = 2
@@ -222,28 +228,28 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             tp = TN[] - HU[] * (1 + 100 * eps())
             if ((tp - tout) * H[] > 0)
                 @warn("[lsoda] itask = $itask and tout behind tcur - hu")
-                terminate(istate[])
+                terminate!(istate)
             end
             if ((TN[] - tout) * H[] >= 0)
-                successreturn(y, t, itask, ihit, tcrit, istate[])
+                successreturn!(y, t, itask, ihit, tcrit, istate)
                 return
             end
         elseif itask == 4
             if ((tn - tcrit) * H[] > 0)
                 @warn("[lsoda] itask = 4 or 5 and tcrit behind tcur")
-                terminate(istate[])
+                terminate!(istate)
                 return
             end
             if ((tcrit - tout) * H[] < 0)
                 @warn("[lsoda] itask = 4 or 5 and tcrit behind tout")
-                terminate(istate[])
+                terminate!(istate)
                 return
             end
             if ((TN[] - tout) * H[] >= 0)
-                intdy(tout, 0, y, iflag)
+                intdy!(tout, 0, y, iflag)
                 if iflag != 0
                     @warn("[lsoda] trouble from intdy, itask = $itask, tout = $tout\n")
-                    terminate(istate[])
+                    terminate!(istate)
                     return
                 end
                 t[] = tout
@@ -254,14 +260,14 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         elseif itask == 5
             if ((tn - tcrit) * H[] > 0)
                 @warn("[lsoda] itask = 4 or 5 and tcrit behind tcur")
-                terminate(istate[])
+                terminate!(istate)
                 return
             end
             hmx = abs(TN[]) + abs(h)
             ihit = abs(TN[] - tcrit) <= (100 * eps() *hmx)
             if ihit
                 t[] = tcrit
-                successreturn(y, t, itask, tcrit, istate)
+                successreturn!(y, t, itask, tcrit, istate)
                 return
             end
             tnext = tn + H[] * (1 + 4 * eps())
@@ -279,15 +285,15 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             if ((NST[]-NSLAST[]) >= MXSTEP[])
                 @warn("[lsoda] $(MXSTEP[]) steps taken before reaching tout\n")
                 istate[] = -1
-                terminate2(y, t)
+                terminate2!(y, t)
                 return
             end
-            ewset(rtol, atol, YH[1,:])
+            ewset!(rtol, atol, YH[1,:])
             for i = 1:n
                 if EWT[i] <= 0
                     @warn("[lsoda] ewt[$i] = $(EWT[i]) <= 0.\n")
                     istate[] = -6
-                    terminate2(y, t)
+                    terminate2!(y, t)
                     return
                 end
                 EWT[i] = 1 / EWT[i]
@@ -297,18 +303,19 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         if tolsf > 0.01
             tolsf *= 200
             if NST[] == 0
-                @warn("lsoda -- at start of problem, too much accuracy\n")
-                @warn("         requested for precision of machine,\n")
-                @warn("         suggested scaling factor = $tolsf\n")
-                #?three warns?#
-                terminate(istate[])
+                @warn("""
+                lsoda -- at start of problem, too much accuracy
+                requested for precision of machine,
+                suggested scaling factor = $tolsf
+                """)
+                terminate!(istate)
                 return
             end
             @warn("lsoda -- at t = $(t[]), too much accuracy requested\n")
             @warn("         for precision of machine, suggested\n")
             @warn("         scaling factor = $tolsf\n")
             istate[] = -2
-            terminate2(y, t)
+            terminate2!(y, t)
             return
         end
         if ((TN[] + H[]) == TN[])
@@ -325,26 +332,26 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
     end
 
-    stoda(neq, y, f, _data)
-
+    stoda(neq, prob)
+    return
 end
 
-function stoda(neq::Int, y::Ref{Float64}, f::LSODA, _data)
+function stoda(neq::Int, prob)
 #TODO
 end
 
 function vmnorm(n::Int, v::Ref{Float64}, w::Ref{Float64})
-    vm = 0
+    vm = 0.0
     for i in 1:n
         vm = max(vm, abs(v[][i]) * w[i])
     end
     return vm
 end
 
-function ewset(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Ref{Float64})
-    EWT[] = rtol * abs(ycur[]) + atol
+function ewset!(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Ref{Float64})
+    fill!(EWT[], rtol[] * abs(ycur[]) + atol[])
 end
-function intdy(t::Float64, k::Int, dky::Ref{Float64}, iflag::Ref{Int})
+function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
     iflag[] = 0
     if (k < 0 || k > NQ)
         @warn("[intdy] k = $k illegal\n")
@@ -384,5 +391,7 @@ function intdy(t::Float64, k::Int, dky::Ref{Float64}, iflag::Ref{Int})
     for i in 1 : n
         dky[i] *= r
     end
+    return
 end
+
 end # module
