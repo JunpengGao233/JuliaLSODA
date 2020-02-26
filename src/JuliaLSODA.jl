@@ -364,7 +364,7 @@ function intdy(t::Float64, k::Int, dky::Ref{Float64}, iflag::Ref{Int})
     end
     YP1 = YH[1]
     for i in 1:n
-        dky[i] = c *YP1[i]
+        dky[i] = c *YP1[][i]
     end
     for j in (NQ[] -1 : -1 : k)
         jp1 = j + 1
@@ -372,9 +372,9 @@ function intdy(t::Float64, k::Int, dky::Ref{Float64}, iflag::Ref{Int})
         for jj in jp1 - k : j
             c *= jj
         end
-        YP1[] = YH[jp1]
+        YP1[] = YH[][jp1]
         for i = 1 : n
-            dky[i] = c * YP1[i] + s *dky[i]
+            dky[i] = c * YP1[][i] + s *dky[i]
         end
     end
     if k == 0
