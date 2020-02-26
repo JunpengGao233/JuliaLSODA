@@ -152,7 +152,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         #prob.f(du,u,p,t)
         #(double t, double *y, double *ydot, void *data)
 
-        prob.f(YH[2,:] + 1, y, 0 #=_data/p?=#, t[])
+        prob.f(YH[][2,:], y, 0 #=_data/p?=#, t[])
         NFE = 1
         YP1[] = YH[][1,:]
         for i in 1:n
