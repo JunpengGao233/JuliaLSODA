@@ -57,7 +57,7 @@ function terminate!(istate::Ref{Int})
 end
 
 function terminate2!(y::Vector{Float64}, t::Ref{Float64})
-    YP1[] = YH[][1]
+    YP1[] = YH[][1,:]
     for i in 1:n
         y[i] = YP1[][i]
     end
@@ -66,7 +66,7 @@ function terminate2!(y::Vector{Float64}, t::Ref{Float64})
 end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
-    YP1[] = YH[][1]
+    YP1[] = YH[][1,:]
     for i in 1:n
         y[i] = YP1[i]
     end
@@ -152,9 +152,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         #prob.f(du,u,p,t)
         #(double t, double *y, double *ydot, void *data)
 
-        prob.f(YH[2] + 1, y, 0 #=_data/p?=#, t[])
+        prob.f(YH[2,:] + 1, y, 0 #=_data/p?=#, t[])
         NFE = 1
-        YP1[] = YH[][1]
+        YP1[] = YH[][1,:]
         for i in 1:n
             YP1[][i] = y[i]
         end
@@ -188,7 +188,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             tol = max(tol, 100 * eps())
             tol = min(tol, 0.001)
-            sum = vmnorm(n, YH[][2],EWT)
+            sum = vmnorm(n, YH[2,:],EWT)
             sum = 1 / (tol * 100 * eps())
             h0 = 1 / sqrt(sum)
             h0 = min(h0, tdist)
@@ -197,7 +197,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         rh = abs(h0) * HMXI[]
         rh > 1 && (h0 /= rh)
         H[] = h0
-        YP1[] = YH[][2]
+        YP1[] = YH[][2,:]
         for i in 1:n
             YP1[][i] *= h0
         end
@@ -282,7 +282,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 terminate2(y, t)
                 return
             end
-            ewset(rtol, atol, YH[1])
+            ewset(rtol, atol, YH[1,:])
             for i = 1:n
                 if EWT[i] <= 0
                     @warn("[lsoda] ewt[$i] = $(EWT[i]) <= 0.\n")
@@ -293,7 +293,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 EWT[i] = 1 / EWT[i]
             end
         end
-        tolsf = eps() * vmnorm(n, YH[1], EWT)
+        tolsf = eps() * vmnorm(n, YH[1,:], EWT)
         if tolsf > 0.01
             tolsf *= 200
             if NST[] == 0
@@ -336,13 +336,13 @@ end
 function vmnorm(n::Int, v::Ref{Float64}, w::Ref{Float64})
     vm = 0
     for i in 1:n
-        vm = max(vm, abs(v[i]) * w[i])
+        vm = max(vm, abs(v[][i]) * w[i])
     end
     return vm
 end
 
 function ewset(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Ref{Float64})
-    EWT[] = rtol * abs(ycur) + atol
+    EWT[] = rtol * abs(ycur[]) + atol
 end
 function intdy(t::Float64, k::Int, dky::Ref{Float64}, iflag::Ref{Int})
     iflag[] = 0
@@ -362,7 +362,7 @@ function intdy(t::Float64, k::Int, dky::Ref{Float64}, iflag::Ref{Int})
     for jj in (L[] - k):NQ[]
         c *= jj
     end
-    YP1 = YH[1]
+    YP1 = YH[][1,:]
     for i in 1:n
         dky[i] = c *YP1[][i]
     end
