@@ -273,7 +273,66 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
         end
     end
+    #Block e#
+    while 1
+        if (istate[] != 1 || NST[] != 0)
+            if ((NST[]-NSLAST[]) >= MXSTEP[])
+                @warn("[lsoda] $(MXSTEP[]) steps taken before reaching tout\n")
+                istate[] = -1
+                terminate2(y, t)
+                return
+            end
+            ewset(rtol, atol, YH[1])
+            for i = 1:n
+                if EWT[i] <= 0
+                    @warn("[lsoda] ewt[$i] = $(EWT[i]) <= 0.\n")
+                    istate[] = -6
+                    terminate2(y, t)
+                    return
+                end
+                EWT[i] = 1 / EWT[i]
+            end
+        end
+        tolsf = eps() * vmnorm(n, YH[1], EWT)
+        if tolsf > 0.01
+            tolsf *= 200
+            if NST[] == 0
+                @warn("lsoda -- at start of problem, too much accuracy\n")
+                @warn("         requested for precision of machine,\n")
+                @warn("         suggested scaling factor = $tolsf\n")
+                #?three warns?#
+                terminate(istate[])
+                return
+            end
+            @warn("lsoda -- at t = $(t[]), too much accuracy requested\n")
+            @warn("         for precision of machine, suggested\n")
+            @warn("         scaling factor = $tolsf\n")
+            istate[] = -2
+            terminate2(y, t)
+            return
+        end
+        if ((TN[] + H[]) == TN[])
+            NHNIL[] += 1
+            if NHNIL[] <= MXHNIL[]
+                @warn( "lsoda -- warning..internal t = $(TN[]) and h = $(H[]) are\n")
+                @warn("         such that in the machine, t + h = t on the next step\n")
+                @warn("         solver will continue anyway.\n")
+                if NHNIL[] == MXHNIL[]
+                    @warn("lsoda -- above warning has been issued $(NHNIL[]) times,\n")
+                    @warn( "         it will not be issued again for this problem\n")
+                end
+            end
+        end
+    end
+
+    stoda(neq, y, f, _data)
+
 end
+
+function stoda(neq::Int, y::Ref{Float64}, f::LSODA, _data)
+#TODO
+end
+
 function vmnorm(n::Int, v::Ref{Float64}, w::Ref{Float64})
     vm = 0
     for i in 1:n
