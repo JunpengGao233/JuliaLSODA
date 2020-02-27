@@ -68,7 +68,7 @@ function terminate2!(y::Vector{Float64}, t::Ref{Float64})
 end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
-    YP1[] = YH[][1,:]
+    YP[] = YH[][1,:]
     for i in 1:n
         y[i] = YP1[i]
     end
@@ -76,8 +76,8 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
     if itask == 4 || itask == 5
         ihit && (t = tcrit)
     end
-    istate = 2
-    ILLIN = 0
+    istate[] = 2
+    ILLIN[] = 0
     return
 end
 
@@ -166,7 +166,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         EWT[] = similar(y)
         ewset!(rtol, atol, y)
         for i in 1:neq
-            if EWT[][i] <= 0
+            if EWT[i] <= 0
                 @warn("[lsoda] EWT[$i] = $(EWT[][i])")
                 terminate2!(y, t)
                 return
@@ -290,13 +290,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             ewset!(rtol, atol, YH[1,:])
             for i = 1:n
-                if EWT[i] <= 0
-                    @warn("[lsoda] ewt[$i] = $(EWT[i]) <= 0.\n")
+                if EWT[][i] <= 0
+                    @warn("[lsoda] ewt[$i] = $(EWT[][i]) <= 0.\n")
                     istate[] = -6
                     terminate2!(y, t)
                     return
                 end
-                EWT[i] = 1 / EWT[i]
+                EWT[][i] = 1 / EWT[][i]
             end
         end
         tolsf = eps() * vmnorm(n, YH[1,:], EWT)
@@ -311,9 +311,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 terminate!(istate)
                 return
             end
-            @warn("lsoda -- at t = $(t[]), too much accuracy requested\n")
-            @warn("         for precision of machine, suggested\n")
-            @warn("         scaling factor = $tolsf\n")
+            @warn("""lsoda -- at t = $(t[]), too much accuracy requested
+                     for precision of machine, suggested
+                     scaling factor = $tolsf""")
             istate[] = -2
             terminate2!(y, t)
             return
@@ -321,26 +321,228 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         if ((TN[] + H[]) == TN[])
             NHNIL[] += 1
             if NHNIL[] <= MXHNIL[]
-                @warn( "lsoda -- warning..internal t = $(TN[]) and h = $(H[]) are\n")
-                @warn("         such that in the machine, t + h = t on the next step\n")
-                @warn("         solver will continue anyway.\n")
+                @warn( """lsoda -- warning..internal t = $(TN[]) and h = $(H[]) are
+                         such that in the machine, t + h = t on the next step
+                         solver will continue anyway.""")
                 if NHNIL[] == MXHNIL[]
-                    @warn("lsoda -- above warning has been issued $(NHNIL[]) times,\n")
-                    @warn( "         it will not be issued again for this problem\n")
+                    @warn("""lsoda -- above warning has been issued $(NHNIL[]) times,
+                            it will not be issued again for this problem\n""")
                 end
             end
         end
-    end
 
-    stoda(neq, prob)
+        stoda(neq, prob)
+        
+        #Block f#
+        if KFLAG[] == 0
+            INIT[] = 1
+            if METH[] != MUSED[]
+                TSW[] = TN[]
+                MAXCOR[] = MXORDS[]
+                if METH[] == 2
+                    MAXORD[] = MXORDS[]
+                end
+                JSTART[] = -1
+                if IXPR[]
+                    METH[] == 2 && @warn("[lsoda] a switch to the stiff method has occurred")
+                    METH[] == 1 && @warn("[lsoda] a switch to the nonstiff method has occurred")
+                    @warn("at t = $(TN[]), tentative step size h = $(H[]), step nst = $(NST[])\n")
+                end
+            end
+            #itask == 1
+            if itask == 1
+                if (TN[] - tout) * H[] < 0
+                    continue
+                end
+                intdy(tout, 0, y, iflag)
+                t[] = tout
+                istate[] = 2
+                ILLIN[] = 0
+                return
+            end
+            if itask == 2
+                successreturn(y, t, itask, ihit, tcrit, istate)
+                return
+            end
+            if itask == 3
+                if (TN[] - tout) * h >= 0
+                    successreturn(y, t, itask, ihit, tcrit, istate)
+                    return
+                end
+                continue
+            end
+            if itask == 4
+                if (TN[] - tout) * h >= 0
+                    intdy(tout, 0, y, iflag)
+                    t[] = tout
+                    istate[] =2
+                    ILLIN[] = 0
+                    return
+                else
+                    hmx = abs(TN[]) + abs(H[])
+                    ihit = abs(tn - tcrit) <= 100 * eps() *hmx
+                    if ihit
+                        successreturn(y, t, itask, ihit, tcrit, istate)
+                        return
+                    end
+                    tnext = TN[] + H[] * (1 + 4 * eps())
+                    if ((tnext - tcrit) * H[] <= 0)
+                        continue
+                    end
+                    H[] = (tcrit - TN[]) * (1 - 4 * eps())
+                    JSTART[] = -2
+                    continue
+                end
+            end
+            if itask == 5
+                hmx = abs(TN[]) + abs(H[])
+                ihit = abs(TN[] - tcrit) <= (100 * eps() * hmx)
+                successreturn(y, t, itask, ihit, tcrit, istate)
+                return
+            end
+        end
+        if (KFLAG[] == -1 || KFLAG[] == -2)
+            if KFLAG[] == -1
+                @warn("""at t = $(TN[]), tentative step size h = $(H[]), step nst = $(NST[])\n
+                 error test failed repeatedly or with fabs(h) = hmin""")
+                istate[] = -4
+            end
+            if KFLAG[] == -2
+                @warn("""         corrector convergence failed repeatedly or
+                         with fabs(h) = hmin""")
+                istate[] = -5
+            end
+            big = 0
+            IMXER[] = 1
+            for i in 1:n
+                sizing = abs(ACOR[i]) * EWT[][i]
+                if big < sizing
+                    big = sizing
+                    IMXER[] = 1
+                end
+            end
+            terminate2(y, t)
+            return
+        end
+    end
     return
 end
 
 function stoda(neq::Int, prob)
-#TODO
+    KFLAG[] = 0
+    told = TN[]
+    ncf = 0
+    IERPJ[] = 0
+    IERSL[] = 0
+    JCUR[] = 0
+    delp = 0.0
+    if JSTART[] == 0
+        LMAX[] = MAXORD[] + 1
+        NQ[] = 1
+        L[] = 2
+        IALTH[] = 2
+        RMAX[] = 10000.0
+        RC[] = 0
+        EL0[] = 1.0
+        CRATE[] = 0.7
+        HOLD[] = H[]
+        NSLP[] = 0
+        IPUP[] = MITER[]
+        ICOUNT[] = 20
+        IRFLAG[] = 0
+        PDEST[] = 0.0
+        PDLAST[] = 0.0
+        RATIO[] = 5.0
+        cfode(2)
+        for i in 1:5
+            CM2[i] = TESCO[i][2] * ELCO[i][i + 1]
+        end
+        cfode(1)
+        for i in 1:12
+            CM1[i] = TESCO[i][2] * ELCO[i][i + 1]
+        end
+        resetcoeff()
+    end
 end
 
-function vmnorm(n::Int, v::Ref{Float64}, w::Ref{Float64})
+function cfode(meth::Int)
+    pc = zeros(13)
+    if meth == 1
+        ELCO[1][1] = 1.0
+		ELCO[1][2] = 1.0
+		TESCO[1][1] = 0.0
+		TESCO[1][2] = 2.0
+		TESCO[2][1] = 1.0
+		TESCO[12][3] = 0.0
+		pc[1] = 1.0
+        rqfac = 1.0
+        for NQ[] in 2:12
+            rq1fac = rqfac
+            rqfac = rqfac / NQ[]
+            nqm1 = NQ[] - 1
+            fnqm1 = Float64(nqm1)
+            nqp1 = NQ[] + 1
+            pc[NQ[]] = 0.0
+            for i in NQ[] : -1 : 2
+                pc[i] = pc[i - 1] + fnqm1 * pc[i]
+            end
+            pc[1] = fnqm1 * pc[1]
+            pint = pc[1]
+            xpin = pc[1] / 2.0
+            tsign = 1.0
+            for i in 2:NQ[]
+                tsign = -tsign
+                pint += tsign * pc[i] / i
+                xpin += tsign * pc[i] / (i + 1)
+            end
+            ELCO[NQ[]][1] = pint * rq1fac
+            ELCO[NQ[]][2] = 1.0
+            for i in 2: NQ[]
+                ELCO[NQ[]][i + 1] = rq1fac * pc[i] / i
+            end
+            agamq = rqfac * xpin
+            ragq = 1.0 / agamq
+            TESCO[NQ[]][2] = ragq
+            if NQ[] < 12
+                TESCO[nqp1][1] = ragq * rqfac / nqp1
+            end
+            TESCO[nqm1][3] = ragq
+        end
+        return
+    pc[1] = 1.0
+    rq1fac = 1.0
+    for NQ[] in 1:5
+        fnq = Float64(NQ[])
+        nqp1 = NQ[] + 1
+        pc[nqp1] = 0
+        for i in NQ[] + 1 : -1 : 2
+            pc[i] = pc[i - 1] + fnq * pc[i]
+        end
+        pc[i] *= fnq
+        for i = 1:nqp1
+            ELCO[NQ[]][i] = pc[i] / pc[2]
+        end
+        ELCO[NQ[]][2] = 1
+        TESCO[NQ[]][1] = rq1fac
+        TESCO[NQ[]][2] = Float64(nqp1) / ELCO[NQ[]][1]
+        TESCO[NQ[]][3] = Float64(NQ[] + 2) / ELCO[NQ[]][1]
+        rq1fac /= fnq
+    end
+    return
+end
+
+function resetcoeff()
+    ep1 = ELCO[NQ[], :]
+    for i in 1:L[]
+        EL[i] = ep1[i]
+    end
+    RC[] = RC[] * EL[1] / EL0
+    EL0 = EL[1]
+    CONIT = 0.5 / (NQ[] + 2)
+    return
+end
+
+function vmnorm(n::Int, v::Vector{Float64}, w::Vector{Float64})
     vm = 0.0
     for i in 1:n
         vm = max(vm, abs(v[][i]) * w[i])
@@ -351,6 +553,7 @@ end
 function ewset!(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Ref{Float64})
     fill!(EWT[], rtol[] * abs(ycur[]) + atol[])
 end
+
 function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
     iflag[] = 0
     if (k < 0 || k > NQ)
