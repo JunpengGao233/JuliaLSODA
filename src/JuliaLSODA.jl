@@ -59,7 +59,7 @@ end
 
 function terminate2!(y::Vector{Float64}, t::Ref{Float64})
     YP1[] = YH[][1,:]
-    for i in 1:n
+    for i in 1:N[]
         y[i] = YP1[][i]
     end
     t[] = TN[]
@@ -69,7 +69,7 @@ end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
     YP[] = YH[][1,:]
-    for i in 1:n
+    for i in 1:N[]
         y[i] = YP1[i]
     end
     t[] = TN[]
@@ -94,9 +94,10 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 
     t = Ref(first(prob.tspan))
     neq = length(prob.u0)
+
     # NOTE!!! this function mutates `prob.u0`
     y = prob.u0
-
+    N[] = neq
     if istate[] == 1
 		INIT[] = 0
 		if tout == t[]
@@ -156,18 +157,18 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         #(double t, double *y, double *ydot, void *data)
 
         prob.f(YH[][2,:], y, prob.p, t[])
-        NFE = 1
+        NFE[] = 1
         YP1[] = YH[][1,:]
-        for i in 1:neq
+        for i in 1:N[]
             YP1[][i] = y[i]
         end
         NQ[] = 1
-        H[] = 1
+        H[] = 1.0
         EWT[] = similar(y)
         ewset!(rtol, atol, y)
-        for i in 1:neq
-            if EWT[i] <= 0
-                @warn("[lsoda] EWT[$i] = $(EWT[][i])")
+        for i in 1:N[]
+            if EWT[][i] <= 0
+                @warn("[lsoda] EWT[$i] = $(EWT[][i]) <= 0.0")
                 terminate2!(y, t)
                 return
             end
@@ -184,7 +185,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             tol = rtol
             if tol <= 0.0
-                for i in 1:n
+                for i in 1:N[]
                     ayi = abs(y[i])
                     if ayi != 0
                         tol = max(rtol, atol/ayi)
@@ -193,7 +194,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             tol = max(tol, 100 * eps())
             tol = min(tol, 0.001)
-            sum = vmnorm(n, YH[2,:], EWT)
+            sum = vmnorm(N[], YH[][2,:], EWT[])
             sum = 1 / (tol * 100 * eps())
             h0 = 1 / sqrt(sum)
             h0 = min(h0, tdist)
@@ -204,7 +205,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         rh > 1 && (h0 /= rh)
         H[] = h0
         YP1[] = YH[][2,:]
-        for i in 1:n
+        for i in 1:N[]
             YP1[][i] *= h0
         end
     end
@@ -254,7 +255,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 end
                 t[] = tout
                 istate[] = 2
-                ILLIN = 0
+                ILLIN[] = 0
                 return
             end
         elseif itask == 5
@@ -289,7 +290,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 return
             end
             ewset!(rtol, atol, YH[1,:])
-            for i = 1:n
+            for i = 1:N[]
                 if EWT[][i] <= 0
                     @warn("[lsoda] ewt[$i] = $(EWT[][i]) <= 0.\n")
                     istate[] = -6
@@ -299,7 +300,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 EWT[][i] = 1 / EWT[][i]
             end
         end
-        tolsf = eps() * vmnorm(n, YH[1,:], EWT)
+        tolsf = eps() * vmnorm(N[], YH[][1,:], EWT[])
         if tolsf > 0.01
             tolsf *= 200
             if NST[] == 0
@@ -414,7 +415,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             big = 0
             IMXER[] = 1
-            for i in 1:n
+            for i in 1:N[]
                 sizing = abs(ACOR[i]) * EWT[][i]
                 if big < sizing
                     big = sizing
@@ -430,12 +431,18 @@ end
 
 function stoda(neq::Int, prob)
     KFLAG[] = 0
-    told = TN[]
-    ncf = 0
+    told = Ref(TN[])
+    corflag = Ref(0)
+    ncf = Ref(0)
+    delp = Ref(0.0)
+    del = Ref(0.0)
+    m = Ref(0)
+    pdh = Ref(0.0)
+    rh = Ref(0.0)    
+    orderflag = Ref(0)
     IERPJ[] = 0
     IERSL[] = 0
     JCUR[] = 0
-    delp = 0.0
     if JSTART[] == 0
         LMAX[] = MAXORD[] + 1
         NQ[] = 1
@@ -462,6 +469,207 @@ function stoda(neq::Int, prob)
             CM1[i] = TESCO[i][2] * ELCO[i][i + 1]
         end
         resetcoeff()
+    end
+    if JSTART[] == -1
+        IPUP[] = MITER[]
+        LMAX[] = MAXCOR[] + 1
+        if IALTH[] == 1
+            IALTH = 2
+        end
+        if METH[] != MUSED[]
+            cfode(METH[])
+            IALTH[] = 1
+            resetcoeff()
+        end
+        if H[] != HOLD[]
+            rh[] = H[] / HOLD[]
+            H[] = HOLD[]
+            scaleh(rh, pdh)
+        end
+    end
+    if JSTART[] == -2
+        if H[] != HOLD[]
+            rh[] = H[] / HOLD[]
+            H[] = HOLD[]
+            scaleh(rh, pdh)
+        end
+    end
+    while 1
+        while 1
+            if abs(RC[] - 1) > CCMAX[]
+                IPUP[] = MITER[]
+            end
+            if NST[] >= NSLP[] + MSBP[]
+                IPUP[] = MITER[]
+            end
+            TN[] += H[]
+            for j in NQ : -1 : 1
+                for i1 in j:NQ[]
+                    YP1[] = YH[][i1]
+                    YP2 = YH[][i1 + 1]
+                    for i in 1:N[]
+                        YP1[][i] += YP2[i]
+                    end
+                end
+            end
+            pnorm = vmnorm(N[], YH[][1,:], EWT[])
+            #Ref??? y 
+            correction(neq, y, prob.f, corflag, pnorm, del, delp, told, ncf, rh, m, prob.p)
+            if corflag[] == 0
+                break
+            end
+            if corflag[] == 1
+                rh[] = max(rh[], HMIN[]/abs(H[]))
+                scaleh(rh, pdh)
+                continue
+            end
+            if corflag[] == 2
+                KFLAG[] = -2
+                HOLD[] = H[]
+                JSTART[] = 1
+                return
+            end
+        end
+        JCUR[] = 0
+        if m == 0
+            dsm = del[] / TESCO[NQ[]][2]
+        end
+        if m[] > 0
+            dsm = vmnorm(N[], ACOR[], EWT[]) / TESCO[NQ[]][2]
+        end
+        if dsm <= 1.0
+            KFLAG[] = 0
+            NST[] += 1
+            HU[] = H[]
+            NQU[] = NQ[]
+            MUSED[] = METH[]
+            for j = 1:L[]
+                YP1[] = YH[][j]
+                r = EL[j]
+                for i = 1:N[]
+                    YP1[][i] += r * ACOR[][i]
+                end
+            end
+            ICOUNT[] -= 1
+            if ICOUNT[] < 0
+                methodswitch(dsm, pnorm, pdh, rh)
+                if METH[] != MUSED[]
+                    rh[] = max(rh[], HMIN[] / abs(H[]))
+                    scaleh(rh, pdh)
+                    RMAX[] = 10.0
+                    endstoda()
+                    break
+                end
+            end
+            IALTH[] -= 1
+            if IALTH[] == 0
+                rhup = Ref(0.0)
+                if L[] != LMAX[]
+                    YP1[] = YH[][LMAX[]]
+                    for i in 1:N[]
+                        SAVF[][i] = ACOR[][i] - YP1[][i]
+                    end
+                    dup = vmnorm(N[], SAVF[], EWT[]) / TESCO[NQ[]][3]
+                    exup = 1 / (L[] + 1)
+                    rhup[] = 1 / (1.4 * dup ^ exup +0.0000014)
+                end
+                orderswitch(rhup, dsm, pdh, rh, orderflag)
+                if orderflag[] == 0
+                    endstoda()
+                    break
+                end
+                if orderflag[] == 1
+                    rh[] = max(rh, HMIN[] / abs(H[]))
+                    scaleh(rh, pdh)
+                    RMAX[] = 10.0
+                    break
+                end
+                if orderflag[] == 2
+                    resetcoeff()
+                    rh[] = max(rh[], HMIN[] / abs(H[]))
+                    scaleh(rh, pdh)
+                    RMAX[] = 10
+                    endstoda()
+                    break
+                end
+            end
+            if IALTH[] > 1 || L[] == LMAX[]
+                endstoda()
+                break
+            end
+            YP1[] = YH[][LMAX[]]
+            for i in 1:N[]
+                YP1[][i] = ACOR[][i]
+            end
+            endstoda()
+            break
+        else
+            KFLAG[] -= 1
+            TN[] = told[]
+            for j in NQ[] : -1 : 1
+                for i1 in j:NQ[]
+                    YP1[] = YH[][i1]
+                    YP2[] = YH[][i1+1]
+                    for i in 1:N[]
+                        YP1[][i] -= YP2[][i]
+                    end
+                end
+            end
+            RMAX[] = 2.0
+            if abs(H[]) <= HMIN[] * 1.00001
+                KFLAG[] = -1
+                HOLD[] = H[]
+                JSTART[] = 1
+                break
+            end
+            if KFLAG[] > -3
+                rhup[] = 0.0
+                orderswitch(rhup, dsm, pdh, rh, orderflag)
+                if orderflag[] == 1 || orderflag[] == 0
+                    if orderflag[] == 0
+                        rh[] = min(rh[], 0.2)
+                    end
+                    rh[] = max(rh[], HMIN[] / abs(H[]))
+                    scaleh(rh, pdh)
+                end
+                if orderflag[] == 2
+                    resetcoeff()
+                    rh[] = max(rh[], HMIN[] / abs(H[]))
+                    scaleh(rh, pdh)
+                end
+                continue
+            else
+                if KFLAG[] == -10
+                    KFLAG[] = -1
+                    HOLD[] = H[]
+                    JSTART[] = 1
+                    break
+                else
+                    rh[] = 0.1
+                    rh[] = max(HMIN[] / abs(H[]), rh[])
+                    H[] *= rh[]
+                    YP1[] = YH[][1,:]
+                    for i in 1:N[]
+                        y[i] = YP1[][i]
+                    end
+                    prob.f(savf[], y, prob.p, TN[])
+                    NFE[] += 1
+                    YP1[] = YH[][2,:]
+                    for i in 1:N[]
+                        YP1[][i] = H[] * SAVF[][i]
+                    end
+                    IPUP[] = miter[]
+                    IALTH[] = 5
+                    if NQ[] == 1
+                        continue
+                    end
+                    NQ[] = 1
+                    L[] = 2
+                    resetcoeff()
+                    continue
+                end
+            end
+        end
     end
 end
 
@@ -519,7 +727,7 @@ function cfode(meth::Int)
             pc[i] = pc[i - 1] + fnq * pc[i]
         end
         pc[i] *= fnq
-        for i = 1:nqp1
+        for i = 1:N[]qp1
             ELCO[NQ[]][i] = pc[i] / pc[2]
         end
         ELCO[NQ[]][2] = 1
@@ -529,6 +737,30 @@ function cfode(meth::Int)
         rq1fac /= fnq
     end
     return
+end
+
+function scaleh(rh::Ref{Float64}, pdh::Ref{Float64})
+    rh[] = min(rh[], RMAX[])
+    rh[] = rh[] / max(1, abs(H[] * HMXI[] * rh[]))
+    if METH[] ==1 
+        IRFLAG[] = 0
+        pdh[] = max(abs(H[]) * PDLAST[], 0.000001)
+        if rh[] * pdh[] * 1.00001 >= SM1[NQ[]]
+            rh[] = SM1[NQ[]] / pdh[]
+            IRFLAG[] = 1
+        end
+    end
+    r = 1.0
+    for j in 2:L[]
+        r *= rh[]
+        YP1[] = YH[][j]
+        for i = 1:N[]
+            YP1[][i] *= r
+        end
+    end
+    H[] *= rh[]
+    RC[] *= rh[]
+    IALTH[] = L[]
 end
 
 function resetcoeff()
@@ -544,7 +776,7 @@ end
 
 function vmnorm(n::Int, v::Vector{Float64}, w::Vector{Float64})
     vm = 0.0
-    for i in 1:n
+    for i in 1:N[]
         vm = max(vm, abs(v[][i]) * w[i])
     end
     return vm
@@ -572,8 +804,8 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
     for jj in (L[] - k):NQ[]
         c *= jj
     end
-    YP1 = YH[][1,:]
-    for i in 1:n
+    YP1[] = YH[][1,:]
+    for i in 1:N[]
         dky[i] = c *YP1[][i]
     end
     for j in (NQ[] -1 : -1 : k)
@@ -596,5 +828,58 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
     end
     return
 end
+
+function prja(neq::Int, prob)
+    NJE[] += 1
+    IERPJ[] = 0
+    JCUR[] = 1
+    hl0 = H[] * EL0[]
+    if MITER[] != 2
+        @warn("[prja] miter != 2\n")
+        return
+    else
+        fac = vmnorm(N[], SAVF[], EWT[])
+        r0 = 1000 * abs(H[]) * eps() * N[] *fac
+        if r0 == 0.0
+            r0 = 1
+        end
+        for j in 1:N[]
+            yj = y[j] ## y need to be changed
+            r = max(sqrt(eps()) * abs(yj), r0/EWT[][j])
+            y[j] += r
+            fac = -hl0 / r
+            prob.f(ACOR[], y, prob.p, TN[])
+            for i in 1:N[]
+                WM[][i][j] = ACOR[][i] - SAVF[][i] * fac
+            end
+            y[j] = yj
+        end
+        NFE[] += N[]
+        PDNORM[] = fnorm(N[], WM[], EWT[]) / abs(hl0)
+        for i in 1:N[]
+            WM[][i][i] += 1.0
+        end
+        LUresult = lu!(WM[])
+        WM[] = LUresult.L
+        if 0 in diag(LUresult.U)
+            IERPJ[] = 1
+        end
+        return
+    end
+end
+
+function fnorm(n::Int, a::Matrix{Float64}, w::Vector{Float64})
+    an = 0
+    for i in 1:n
+        sum = 0
+        ap1 = a[i,:]
+        for j in 1:n
+            sum +=abs(ap1[j]) / w[j]
+        end
+        an = max(an, sum * w[i])
+    end
+    return an
+end
+
 
 end # module
