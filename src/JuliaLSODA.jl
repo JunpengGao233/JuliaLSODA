@@ -1199,15 +1199,5 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderf
     return
 end
 
-function resetcoeff()
-    ep1 = ELCO[NQ[],:]
-    for i in 1:L[]
-        EL[i] = ep1[i]
-    end
-    RC[] = RC[] * EL[1] / EL0
-    EL0 = EL[1]
-    CONIT[] = 0.5 / (NQ[] + 2)
-    return
-end
 
 end # module
