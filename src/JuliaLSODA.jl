@@ -264,7 +264,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 terminate!(istate)
                 return
             end
-            hmx = abs(TN[]) + abs(h)
+            hmx = abs(TN[]) + abs(H[])
             ihit = abs(TN[] - tcrit) <= (100 * eps() *hmx)
             if ihit
                 t[] = tcrit
@@ -430,6 +430,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 end
 
 function stoda(neq::Int, prob)
+    y = prob.u0
     KFLAG[] = 0
     told = Ref(TN[])
     corflag = Ref(0)
@@ -514,7 +515,7 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y 
-            correction(neq, y, prob.f, corflag, pnorm, del, delp, told, ncf, rh, m, prob.p)
+            correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
             if corflag[] == 0
                 break
             end
@@ -717,6 +718,7 @@ function cfode(meth::Int)
             TESCO[nqm1][3] = ragq
         end
         return
+    end
     pc[1] = 1.0
     rq1fac = 1.0
     for NQ[] in 1:5
@@ -881,5 +883,331 @@ function fnorm(n::Int, a::Matrix{Float64}, w::Vector{Float64})
     return an
 end
 
+function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float64,
+    del::Ref{Float64}, delp::Ref{Float64}, told::Ref{Float64}, ncf::Ref{Int}, rh::Ref{Float64},
+    m::Ref{Int})
+    y = prob.u0
+    m[] = 0
+    corflag[] = 0
+    rate = 0
+    del[] = 0
+    YP1[] = YH[][1]
+    for i in 1:N[]
+        y[i] = YP1[][i]
+    end
+    prob.f(SAVF[], y, prob.p, TN[])
+    NFE[] += 1
+
+    while 1
+        if m[] == 0
+            if IPUP[] > 0
+                prja(neq, y, prob.f, prob.p)
+                IPUP[] = 0
+                RC[] = 1.0
+                NSLP[] = NST[]
+                CRATE[] = 0.7
+                if IERPJ[] != 0
+                    corfailure(told, rh, ncf, corflag)
+                    return
+                end
+            end
+            for i in 1:N[]
+                ACOR[][i] = 0.0
+            end
+        end
+        if MITER[] == 0
+            YP1[] = YH[][2,:]
+            for i in 1:N[]
+                SAVF[][i] = H[] * SAVF[][i] - YP1[][i]
+                y[i] = SAVF[][i] - ACOR[][i]
+            end
+            del[] = vmnorm(N[], y, EWT[])
+            YP1[] = YH[][1,:]
+            for i = 1:N[]
+                y[i] = YP1[][i] + EL[1] * SAVF[][i]
+                ACOR[][i] = SAVF[][i]
+            end
+        else
+            YP1[] = YH[][2,:]
+            for i in 1:N[]
+                y[i] = H[] * SAVF[][i] - (YP1[][i] + ACOR[][i])
+            end
+            solsy(y)
+            del[] = vmnorm(N[], y, EWT[])
+            YP1[] = YH[][1,:]
+            for i in 1:N[]
+                ACOR[][i] += y[i]
+                y[i] = YP1[][i] +EL[1] *ACOR[][i]
+            end
+        end
+        if del[] <= 100 *pnorm *eps()
+            break
+        end
+        if m[] != 0 || METH[] != 1
+            if m[] != 0
+                rm = 104
+                if del[] <= (1024 * delp[])
+                    rm = del[] / delp[]
+                end
+                rate = max(rate, rm)
+                CRATE[] = max(0.2 * CRATE[], rm)
+            end
+            dcon = del[] * min(1, 1.5 * CRATE[]) / (TESCO[NQ[]][2] * CONIT[])
+            if dcon <= 1
+                PDEST[] = max(PDEST[], rate / abs(H[] * EL[1]))
+                if PDEST[] != 0
+                    PDLAST[] = PDEST[]
+                end
+                break
+            end
+        end
+        m[] += 1
+        if m[] == MAXCOR[] || (m[] >= 2 && del[] > 2 * delp[])
+            if MITER[] == 0 || JCUR[] == 1
+                corfailure(told, rh, ncf, corflag)
+                return
+            end
+            IPUP[] = MITER[]
+            m[] = 0
+            rate = 0
+            del[] = 0
+            YP1 = YH[][1,:]
+            for i in 1:N[]
+                y[i] = YP1[][i]
+            end
+            prob.f(SAVF[], y, prob.f, TN[])
+            NFE[] += 1
+        else
+            delp[] = del[]
+            prob.f(SAVF[], y[], prob.p, TN[])
+            NFE[] += 1
+        end
+    end
+end
+
+function corfailure(told::Ref{Float64}, rh::Ref{Float64}, ncf::Ref{Int},
+    corflag::Ref{Int})
+    ncf[] += 1
+    RMAX[] = 2.0
+    TN[] = told[]
+    for j in NQ[] : -1 : i
+        for i1 in j : NQ[]
+            YP1[] = YH[][i1, :]
+            YP2[] = YH[][i1, :]
+            for i in 1 : n
+                YP1[i] -= YP2[i]
+            end
+        end
+    end
+    if (abs(H[]) <= HMIN[] * 1.00001) || (ncf[] == MXNCF[])
+        corflag[] = 2
+        return
+    end
+    corflag[] = 1
+    rh[] = 0.25
+    IPUP [] = MITER[]
+end
+
+function solsy(y::Float64)
+    IERSL[] = 0
+    if MITER[] != 2
+        print("solsy -- miter != 2\n")
+        return
+    end
+    if MITER[] == 2
+        y = WM[]\y
+    end
+    return
+end
+
+function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64})
+	if (METH[] == 1) 
+		if (NQ[] > 5)
+            return
+        end
+		if (dsm <= (100 * pnorm * eps()) || pdest == 0) 
+			if (IRFLAG[] == 0)
+                return
+            end
+			rh2 = 2.0
+            nqm2 = min(NQ[], MXORDS[])
+		else 
+			exsm = 1 / L[]
+			rh1 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
+			rh1it = 2 * rh1
+			pdh[] = PDLAST[] * abs(H[])
+			if (pdh[] * rh1) > 0.00001
+                rh1it = SM1[NQ[]] / pdh[]
+            end
+			rh1 = min(rh1, rh1it)
+			if (NQ[] > MXORDS[])
+				nqm2 = MXORDS[]
+				lm2 = MXORDS[] + 1
+				exm2 = 1 / lm2
+				lm2p1 = lm2 + 1
+				dm2 = vmnorm(N[], YH[][lm2p1,:], EWT[]) / CM2[MXORDS[]]
+				rh2 = 1 / (1.2 * (dm2 ^ exm2) + 0.0000012)
+			else 
+				dm2 = dsm * (CM1[NQ[]] / CM2[NQ[]])
+				rh2 = 1 / (1.2 * (dm2 ^ exsm) + 0.0000012)
+				nqm2 = NQ[]
+            end
+			if (rh2 < RATIO[] * rh1)
+				return
+            end
+        end
+
+        rh[] = rh2
+        ICOUNT[] = 20
+        METH[] = 2
+        MITER[] = JTYP[]
+        PDLAST[] = 0.0
+        NQ[] = nqm2
+        L[] = NQ[] + 1
+        return
+    end
+
+    exsm = 1 / L[]
+    if MXORDN[] < NQ[]
+        nqm1 = MXORDN[]
+        lm1 = MXORDN[] + 1
+        exm1 = 1 / lm1
+        lm1p1 = lm1 + 1
+        dm1 = vmnorm(N[], YH[][lm1p1,:], EWT[]) / CM1[MXORDN]
+        rh1 = 1 / (1.2 * (dm1 ^ exm1) + 0.0000012)
+    else
+        dm1 = dsm * ((CM2[NQ[]] / CM1[NQ[]]))
+        rh1 = 1 / (1.2 * (dm1 ^ exsm) + 0.0000012)
+        nqm1 = NQ[]
+        exm1 = exsm
+    end
+    rh1it = 2 * rh1
+    pdh[] = PDNORM * abs(H[])
+    if (pdh[] * rh1) > 0.00001
+        rh1it = SM1[nqm1] / pdh[]
+    end
+    rh1 = min(rh1, rh1it)
+    rh2 = 1 / (1.2 *(dsm ^ exsm) + 0.0000012)
+    if rh1 * RATIO[] < 5 * rh2
+        return
+    end
+    alpha = max(0.001, rh1)
+    dm1 *= alpha ^ exm1
+    if dm1 <= 1000 * eps() * pnorm
+        return
+    end
+    rh[] = rh1
+    ICOUNT[] = 20
+    METH[] = 1
+    MITER[] = 0
+    PDLAST[] = 0.0
+    NQ[] = nqm1
+    L[] = NQ[] + 1
+end
+
+function endstoda()
+    r = 1 / TESCO[NQU[]][2]
+    for i in 1:N[]
+        ACOR[][i] *= r
+    end
+    HOLD[] = H[]
+    JSTART[] = 1
+    return
+end
+
+function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderflag::Ref{Int})
+    orderflag[] = 0
+    exsm = 1 / L[]
+    rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
+    rhdn = 0
+    if NQ[] != 1
+        ddn = vmnorm(N[], YH[][1,:], EWT[]) / TESCO[NQ[]][1]
+        exdn = 1 / NQ[]
+        rhdn = 1 / (1.3 * (ddn ^ exdn) + 0.0000013)
+    end
+
+    if METH[] = 1
+        pdh[] = max(abs(H[]) * PDLAST[], 0.000001)
+        if L[] < LMAX[]
+            rhup[] = min(rhup[], SM1[L[]] / pdh[])
+        end
+        rhsm = min(rhsm, SM1[NQ[]] / pdh[])
+        if NQ[] > 1
+            rhdn = min(rhdn, SM1[NQ[] - 1] / pdh[])
+        end
+        PDEST[] = 0
+    end
+    if rhsm >= rhup[]
+        if rhsm >= rhdn
+            newq = NQ[]
+            rh[] = rhsm
+        else
+            newq = NQ[] - 1
+            rh[] = rhdn
+            if KFLAG[] < 0 && rh[] > 1
+                rh[] = 1
+            end
+        end
+    else
+        if rhup[] <= rhdn
+            newq = NQ[] - 1
+            rh[] = rhdn
+            if KFLAG[] < 0 && rh[] > 1
+                rh[] = 1
+            end
+        else
+            rh[] = rhup[]
+            if rh[] >= 1.1
+                r = EL[L[]] / L[]
+                NQ[] = L[]
+                L[] = NQ[] + 1
+                YP1[] = YH[][l[],:]
+                for i in 1:N[]
+                    YP1[][i] = ACOR[][i] * r
+                end
+                orderflag[] = 2
+                return
+            else
+                IALTH[] = 3
+                return
+            end
+        end
+    end
+    if METH[] == 1
+        if rh[] * pdh[] * 1.00001 < SM1[newq]
+            if KFLAG[] == 0 && rh[] < 1.1
+                IALTH = 3
+                return
+            end
+        else
+            if KFLAG[] == 0 && rh[] < 1.1
+                IALTH = 3
+                return
+            end
+        end
+    end
+    if KFLAG[] <= -2
+        rh[] = min(rh[], 0.2)
+    end
+    if newq == NQ[]
+        orderflag[] = 1
+        return
+    end
+    NQ[] = newq
+    L[] = NQ[] + 1
+    orderflag[] = 2
+    return
+end
+
+function resetcoeff()
+    ep1 = ELCO[NQ[],:]
+    for i in 1:L[]
+        EL[i] = ep1[i]
+    end
+    RC[] = RC[] * EL[1] / EL0
+    EL0 = EL[1]
+    CONIT[] = 0.5 / (NQ[] + 2)
+    return
+end
 
 end # module
