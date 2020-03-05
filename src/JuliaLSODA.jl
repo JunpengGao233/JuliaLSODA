@@ -1005,7 +1005,7 @@ function corfailure(told::Ref{Float64}, rh::Ref{Float64}, ncf::Ref{Int},
     end
     corflag[] = 1
     rh[] = 0.25
-    IPUP [] = MITER[]
+    IPUP[] = MITER[]
 end
 
 function solsy(y::Float64)
@@ -1126,7 +1126,7 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderf
         rhdn = 1 / (1.3 * (ddn ^ exdn) + 0.0000013)
     end
 
-    if METH[] = 1
+    if METH[] == 1
         pdh[] = max(abs(H[]) * PDLAST[], 0.000001)
         if L[] < LMAX[]
             rhup[] = min(rhup[], SM1[L[]] / pdh[])
