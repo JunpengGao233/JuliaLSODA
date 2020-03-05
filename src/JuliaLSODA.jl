@@ -506,8 +506,8 @@ function stoda(neq::Int, prob)
             TN[] += H[]
             for j in NQ : -1 : 1
                 for i1 in j:NQ[]
-                    YP1[] = YH[][i1]
-                    YP2 = YH[][i1 + 1]
+                    YP1[] = YH[][i1, :]
+                    YP2 = YH[][i1 + 1, :]
                     for i in 1:N[]
                         YP1[][i] += YP2[i]
                     end
@@ -545,7 +545,7 @@ function stoda(neq::Int, prob)
             NQU[] = NQ[]
             MUSED[] = METH[]
             for j = 1:L[]
-                YP1[] = YH[][j]
+                YP1[] = YH[][j, :]
                 r = EL[j]
                 for i = 1:N[]
                     YP1[][i] += r * ACOR[][i]
@@ -566,7 +566,7 @@ function stoda(neq::Int, prob)
             if IALTH[] == 0
                 rhup = Ref(0.0)
                 if L[] != LMAX[]
-                    YP1[] = YH[][LMAX[]]
+                    YP1[] = YH[][LMAX[], :]
                     for i in 1:N[]
                         SAVF[][i] = ACOR[][i] - YP1[][i]
                     end
@@ -598,7 +598,7 @@ function stoda(neq::Int, prob)
                 endstoda()
                 break
             end
-            YP1[] = YH[][LMAX[]]
+            YP1[] = YH[][LMAX[], :]
             for i in 1:N[]
                 YP1[][i] = ACOR[][i]
             end
@@ -609,8 +609,8 @@ function stoda(neq::Int, prob)
             TN[] = told[]
             for j in NQ[] : -1 : 1
                 for i1 in j:NQ[]
-                    YP1[] = YH[][i1]
-                    YP2[] = YH[][i1+1]
+                    YP1[] = YH[][i1, :]
+                    YP2[] = YH[][i1+1, :]
                     for i in 1:N[]
                         YP1[][i] -= YP2[][i]
                     end
@@ -677,12 +677,12 @@ end
 function cfode(meth::Int)
     pc = zeros(13)
     if meth == 1
-        ELCO[1][1] = 1.0
-		ELCO[1][2] = 1.0
-		TESCO[1][1] = 0.0
-		TESCO[1][2] = 2.0
-		TESCO[2][1] = 1.0
-		TESCO[12][3] = 0.0
+        ELCO[1, 1] = 1.0
+		ELCO[1, 2] = 1.0
+		TESCO[1, 1] = 0.0
+		TESCO[1, 2] = 2.0
+		TESCO[2, 1] = 1.0
+		TESCO[12, 3] = 0.0
 		pc[1] = 1.0
         rqfac = 1.0
         for NQ[] in 2:12
@@ -704,18 +704,18 @@ function cfode(meth::Int)
                 pint += tsign * pc[i] / i
                 xpin += tsign * pc[i] / (i + 1)
             end
-            ELCO[NQ[]][1] = pint * rq1fac
-            ELCO[NQ[]][2] = 1.0
+            ELCO[NQ[], 1] = pint * rq1fac
+            ELCO[NQ[], 2] = 1.0
             for i in 2: NQ[]
-                ELCO[NQ[]][i + 1] = rq1fac * pc[i] / i
+                ELCO[NQ[], i + 1] = rq1fac * pc[i] / i
             end
             agamq = rqfac * xpin
             ragq = 1.0 / agamq
-            TESCO[NQ[]][2] = ragq
+            TESCO[NQ[], 2] = ragq
             if NQ[] < 12
-                TESCO[nqp1][1] = ragq * rqfac / nqp1
+                TESCO[nqp1, 1] = ragq * rqfac / nqp1
             end
-            TESCO[nqm1][3] = ragq
+            TESCO[nqm1, 3] = ragq
         end
         return
     end
@@ -730,12 +730,12 @@ function cfode(meth::Int)
         end
         pc[i] *= fnq
         for i = 1:N[]qp1
-            ELCO[NQ[]][i] = pc[i] / pc[2]
+            ELCO[NQ[], i] = pc[i] / pc[2]
         end
-        ELCO[NQ[]][2] = 1
-        TESCO[NQ[]][1] = rq1fac
-        TESCO[NQ[]][2] = Float64(nqp1) / ELCO[NQ[]][1]
-        TESCO[NQ[]][3] = Float64(NQ[] + 2) / ELCO[NQ[]][1]
+        ELCO[NQ[], 2] = 1
+        TESCO[NQ[], 1] = rq1fac
+        TESCO[NQ[], 2] = Float64(nqp1) / ELCO[NQ[]][1]
+        TESCO[NQ[], 3] = Float64(NQ[] + 2) / ELCO[NQ[]][1]
         rq1fac /= fnq
     end
     return
@@ -755,7 +755,7 @@ function scaleh(rh::Ref{Float64}, pdh::Ref{Float64})
     r = 1.0
     for j in 2:L[]
         r *= rh[]
-        YP1[] = YH[][j]
+        YP1[] = YH[][j, :]
         for i = 1:N[]
             YP1[][i] *= r
         end
@@ -816,7 +816,7 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
         for jj in jp1 - k : j
             c *= jj
         end
-        YP1[] = YH[][jp1]
+        YP1[] = YH[][jp1, :]
         for i = 1 : n
             dky[i] = c * YP1[][i] + s *dky[i]
         end
@@ -852,14 +852,14 @@ function prja(neq::Int, prob)
             fac = -hl0 / r
             prob.f(ACOR[], y, prob.p, TN[])
             for i in 1:N[]
-                WM[][i][j] = ACOR[][i] - SAVF[][i] * fac
+                WM[][i, j] = ACOR[][i] - SAVF[][i] * fac
             end
             y[j] = yj
         end
         NFE[] += N[]
         PDNORM[] = fnorm(N[], WM[], EWT[]) / abs(hl0)
         for i in 1:N[]
-            WM[][i][i] += 1.0
+            WM[][i, i] += 1.0
         end
         LUresult = lu!(WM[])
         WM[] = LUresult.L
@@ -891,7 +891,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     corflag[] = 0
     rate = 0
     del[] = 0
-    YP1[] = YH[][1]
+    YP1[] = YH[][1, :]
     for i in 1:N[]
         y[i] = YP1[][i]
     end
@@ -916,25 +916,25 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         if MITER[] == 0
-            YP1[] = YH[][2,:]
+            YP1[] = YH[][2, :]
             for i in 1:N[]
                 SAVF[][i] = H[] * SAVF[][i] - YP1[][i]
                 y[i] = SAVF[][i] - ACOR[][i]
             end
             del[] = vmnorm(N[], y, EWT[])
-            YP1[] = YH[][1,:]
+            YP1[] = YH[][1, :]
             for i = 1:N[]
                 y[i] = YP1[][i] + EL[1] * SAVF[][i]
                 ACOR[][i] = SAVF[][i]
             end
         else
-            YP1[] = YH[][2,:]
+            YP1[] = YH[][2, :]
             for i in 1:N[]
                 y[i] = H[] * SAVF[][i] - (YP1[][i] + ACOR[][i])
             end
             solsy(y)
             del[] = vmnorm(N[], y, EWT[])
-            YP1[] = YH[][1,:]
+            YP1[] = YH[][1, :]
             for i in 1:N[]
                 ACOR[][i] += y[i]
                 y[i] = YP1[][i] +EL[1] *ACOR[][i]
@@ -971,7 +971,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             m[] = 0
             rate = 0
             del[] = 0
-            YP1 = YH[][1,:]
+            YP1 = YH[][1, :]
             for i in 1:N[]
                 y[i] = YP1[][i]
             end
@@ -1121,7 +1121,7 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderf
     rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
     rhdn = 0
     if NQ[] != 1
-        ddn = vmnorm(N[], YH[][1,:], EWT[]) / TESCO[NQ[]][1]
+        ddn = vmnorm(N[], YH[][1, :], EWT[]) / TESCO[NQ[]][1]
         exdn = 1 / NQ[]
         rhdn = 1 / (1.3 * (ddn ^ exdn) + 0.0000013)
     end
