@@ -143,7 +143,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
         end
 
-        JSTART[] = 0
+        #JSTART[] = 0
         NHNIL[] = 0
         NST[] = 0
         NJE[] = 0
