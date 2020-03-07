@@ -126,7 +126,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
     #TODO iopt == true
     end
-    (istate[] == 3) && (JSTART = -1)
+    (istate[] == 3) && (JSTART[] = -1)
 
     ### Block c ###
     if istate[] == 1
