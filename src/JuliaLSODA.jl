@@ -87,7 +87,11 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             tcrit#=tstop=#=nothing) where {uType,tType}
     mxstp0 = 500
     mxhnl0 = 10
+<<<<<<< HEAD
     iflag = Ref(0)
+=======
+    iflag[] = Ref(0)
+>>>>>>> 93bb4897e983361d63d69baf9c524da9527577d9
     1 <= istate[] <= 3 || (@warn("[lsoda] illegal istate = $istate\n") || terminate(istate[]))
     !(itask < 1 || itask > 5) || (@warn( "[lsoda] illegal itask = $itask\n") || terminate(istate[]))
     !(INIT[] == 0 &&(istate[] == 2 || istate[] == 3)) || (@warn("[lsoda] istate > 1 but lsoda not initialized") || terminate(istate[]))
