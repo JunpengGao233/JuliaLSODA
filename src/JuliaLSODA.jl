@@ -1,4 +1,4 @@
-module JuliaLSODA
+#module JuliaLSODA
 
 using LinearAlgebra
 
@@ -17,8 +17,8 @@ macro defconsts(expr, var)
 end
 
 # newly added static variables
-const MORD = [0, 12, 5]
-const SM1 = [0., 0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.2, 0.15, 0.1, 0.075, 0.05, 0.025]
+const MORD = [12, 5]
+const SM1 = [0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.2, 0.15, 0.1, 0.075, 0.05, 0.025]
 
 @defconsts [CCMAX, EL0, H, HMIN, HMXI, HU, RC, TN,
             TSW, PDNORM,
@@ -34,14 +34,14 @@ const SM1 = [0., 0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.2, 0.15, 0.1, 0.075, 0.05
             PDEST, PDLAST, RATIO,
             ICOUNT, IRFLAG] Ref(0)
 
-const EL = zeros(14)
-const ELCO = zeros(13, 14)
-const TESCO = zeros(13, 4)
-const CM1 = zeros(13)
-const CM2 = zeros(6)
+const EL = zeros(13)
+const ELCO = zeros(12, 13)
+const TESCO = zeros(12, 3)
+const CM1 = zeros(12)
+const CM2 = zeros(5)
 
-@defconsts [YH, WM] Ref{Matrix{Float64}}()
-@defconsts [YP1, YP2, EWT, SAVF, ACOR] Ref{Vector{Float64}}()
+@defconsts [YH, WM] Ref{Matrix{Float64}}(zeros(1,2))
+@defconsts [YP1, YP2, EWT, SAVF, ACOR] Ref{Vector{Float64}}(zeros(2))
 
 struct LSODA <: DiffEqBase.AbstractODEAlgorithm
 end
@@ -83,7 +83,7 @@ end
 
 function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
-                            tout=prob.tspan[end], reltol=1e-4, abstol=1e-6,
+                            tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
     mxstp0 = 500
     mxhnl0 = 10
@@ -115,8 +115,8 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 		MXHNIL[] = mxhnl0
 		HMXI[] = 0.0
 		HMIN[] = 0.0
-		if (istate == 1)
-			h0 = 0.0
+		if (istate[] == 1)
+            h0 = 0.0
 			MXORDN[] = MORD[1]
             MXORDS[] = MORD[2]
         end
@@ -138,6 +138,16 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 h0 = tcrit - t[]
             end
         end
+        METH[] = 1
+        g_nyh = N[]
+        nyh = N[]
+        g_lenyh = 1 + max(MXORDN[], MXORDS[])
+        lenyh = 1 + max(MXORDN[], MXORDS[])
+        YH[] = zeros(lenyh, nyh)
+        WM[] = zeros(nyh, nyh)
+        EWT[] = zeros(nyh)
+        SAVF[] = zeros(nyh)
+        ACOR[] = zeros(nyh)
 
         JSTART[] = 0
         NHNIL[] = 0
@@ -152,11 +162,11 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         MAXCOR[] = 3
         MSBP[] = 20
         MXNCF[] = 10
-
         #prob.f(du,u,p,t)
         #(double t, double *y, double *ydot, void *data)
-
         prob.f(YH[][2,:], y, prob.p, t[])
+        @show YH[][2,:]
+        @show y
         NFE[] = 1
         YP1[] = YH[][1,:]
         for i in 1:N[]
@@ -183,12 +193,12 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 @warn("[lsoda] tout too close to t to start integration")
                 terminate!(istate)
             end
-            tol = rtol
+            tol = rtol[]
             if tol <= 0.0
                 for i in 1:N[]
                     ayi = abs(y[i])
                     if ayi != 0
-                        tol = max(rtol, atol/ayi)
+                        tol = max(rtol[], atol[]/ayi)
                     end
                 end
             end
@@ -281,15 +291,23 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
     end
     #Block e#
-    while 1
+    local count1 = 0
+    local count2 = 0
+    local count3 = 0
+    while true
+        #@show count1
+        #@show count2
+        #@show count3
         if (istate[] != 1 || NST[] != 0)
+            #@show NST[]
+            #@show NSLAST[]
             if ((NST[]-NSLAST[]) >= MXSTEP[])
                 @warn("[lsoda] $(MXSTEP[]) steps taken before reaching tout\n")
                 istate[] = -1
                 terminate2!(y, t)
                 return
             end
-            ewset!(rtol, atol, YH[1,:])
+            ewset!(rtol, atol, YH[][1,:])
             for i = 1:N[]
                 if EWT[][i] <= 0
                     @warn("[lsoda] ewt[$i] = $(EWT[][i]) <= 0.\n")
@@ -331,20 +349,22 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 end
             end
         end
-
+        count1 +=1
         stoda(neq, prob)
         
         #Block f#
         if KFLAG[] == 0
+            count2 += 1
             INIT[] = 1
             if METH[] != MUSED[]
+                @show count3
                 TSW[] = TN[]
-                MAXCOR[] = MXORDS[]
+                MAXORD[] = MXORDS[]
                 if METH[] == 2
                     MAXORD[] = MXORDS[]
                 end
                 JSTART[] = -1
-                if IXPR[]
+                if Bool(IXPR[])
                     METH[] == 2 && @warn("[lsoda] a switch to the stiff method has occurred")
                     METH[] == 1 && @warn("[lsoda] a switch to the nonstiff method has occurred")
                     @warn("at t = $(TN[]), tentative step size h = $(H[]), step nst = $(NST[])\n")
@@ -366,14 +386,14 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 return
             end
             if itask == 3
-                if (TN[] - tout) * h >= 0
+                if (TN[] - tout) * H[] >= 0
                     successreturn(y, t, itask, ihit, tcrit, istate)
                     return
                 end
                 continue
             end
             if itask == 4
-                if (TN[] - tout) * h >= 0
+                if (TN[] - tout) * H[] >= 0
                     intdy(tout, 0, y, iflag)
                     t[] = tout
                     istate[] =2
@@ -402,6 +422,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 return
             end
         end
+
         if (KFLAG[] == -1 || KFLAG[] == -2)
             if KFLAG[] == -1
                 @warn("""at t = $(TN[]), tentative step size h = $(H[]), step nst = $(NST[])\n
@@ -463,19 +484,19 @@ function stoda(neq::Int, prob)
         RATIO[] = 5.0
         cfode(2)
         for i in 1:5
-            CM2[i] = TESCO[i][2] * ELCO[i][i + 1]
+            CM2[i] = TESCO[i, 2] * ELCO[i, i + 1]
         end
         cfode(1)
         for i in 1:12
-            CM1[i] = TESCO[i][2] * ELCO[i][i + 1]
+            CM1[i] = TESCO[i, 2] * ELCO[i,i + 1]
         end
         resetcoeff()
     end
     if JSTART[] == -1
         IPUP[] = MITER[]
-        LMAX[] = MAXCOR[] + 1
+        LMAX[] = MAXORD[] + 1
         if IALTH[] == 1
-            IALTH = 2
+            IALTH[] = 2
         end
         if METH[] != MUSED[]
             cfode(METH[])
@@ -495,8 +516,9 @@ function stoda(neq::Int, prob)
             scaleh(rh, pdh)
         end
     end
-    while 1
-        while 1
+    while true
+        local pnorm
+        while true
             if abs(RC[] - 1) > CCMAX[]
                 IPUP[] = MITER[]
             end
@@ -504,12 +526,12 @@ function stoda(neq::Int, prob)
                 IPUP[] = MITER[]
             end
             TN[] += H[]
-            for j in NQ : -1 : 1
-                for i1 in j:NQ[]
+            for j in NQ[] : -1 : 1
+                for i1 in j : NQ[]
                     YP1[] = YH[][i1, :]
-                    YP2 = YH[][i1 + 1, :]
+                    YP2[] = YH[][i1 + 1, :]
                     for i in 1:N[]
-                        YP1[][i] += YP2[i]
+                        YP1[][i] += YP2[][i]
                     end
                 end
             end
@@ -532,11 +554,11 @@ function stoda(neq::Int, prob)
             end
         end
         JCUR[] = 0
-        if m == 0
-            dsm = del[] / TESCO[NQ[]][2]
+        if m[] == 0
+            dsm = del[] / TESCO[NQ[], 2]
         end
         if m[] > 0
-            dsm = vmnorm(N[], ACOR[], EWT[]) / TESCO[NQ[]][2]
+            dsm = vmnorm(N[], ACOR[], EWT[]) / TESCO[NQ[],2]
         end
         if dsm <= 1.0
             KFLAG[] = 0
@@ -570,7 +592,7 @@ function stoda(neq::Int, prob)
                     for i in 1:N[]
                         SAVF[][i] = ACOR[][i] - YP1[][i]
                     end
-                    dup = vmnorm(N[], SAVF[], EWT[]) / TESCO[NQ[]][3]
+                    dup = vmnorm(N[], SAVF[], EWT[]) / TESCO[NQ[], 3]
                     exup = 1 / (L[] + 1)
                     rhup[] = 1 / (1.4 * dup ^ exup +0.0000014)
                 end
@@ -653,7 +675,7 @@ function stoda(neq::Int, prob)
                     for i in 1:N[]
                         y[i] = YP1[][i]
                     end
-                    prob.f(savf[], y, prob.p, TN[])
+                    prob.f(SAVF[], y, prob.p, TN[])
                     NFE[] += 1
                     YP1[] = YH[][2,:]
                     for i in 1:N[]
@@ -728,14 +750,14 @@ function cfode(meth::Int)
         for i in NQ[] + 1 : -1 : 2
             pc[i] = pc[i - 1] + fnq * pc[i]
         end
-        pc[i] *= fnq
-        for i = 1:N[]qp1
+        pc[1] *= fnq
+        for i = 1:nqp1
             ELCO[NQ[], i] = pc[i] / pc[2]
         end
         ELCO[NQ[], 2] = 1
         TESCO[NQ[], 1] = rq1fac
-        TESCO[NQ[], 2] = Float64(nqp1) / ELCO[NQ[]][1]
-        TESCO[NQ[], 3] = Float64(NQ[] + 2) / ELCO[NQ[]][1]
+        TESCO[NQ[], 2] = Float64(nqp1) / ELCO[NQ[], 1]
+        TESCO[NQ[], 3] = Float64(NQ[] + 2) / ELCO[NQ[], 1]
         rq1fac /= fnq
     end
     return
@@ -770,22 +792,24 @@ function resetcoeff()
     for i in 1:L[]
         EL[i] = ep1[i]
     end
-    RC[] = RC[] * EL[1] / EL0
-    EL0 = EL[1]
+    RC[] = RC[] * EL[1] / EL0[]
+    EL0[] = EL[1]
     CONIT = 0.5 / (NQ[] + 2)
     return
 end
 
 function vmnorm(n::Int, v::Vector{Float64}, w::Vector{Float64})
     vm = 0.0
-    for i in 1:N[]
-        vm = max(vm, abs(v[][i]) * w[i])
+    for i in 1:n
+        vm = max(vm, abs(v[i]) * w[i])
     end
     return vm
 end
 
-function ewset!(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Ref{Float64})
-    fill!(EWT[], rtol[] * abs(ycur[]) + atol[])
+function ewset!(rtol::Ref{Float64}, atol::Ref{Float64}, ycur::Vector{Float64})
+    for i in 1:N[]
+        EWT[][i] = rtol[] * abs(ycur[i]) + atol[]
+    end
 end
 
 function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
@@ -817,7 +841,7 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
             c *= jj
         end
         YP1[] = YH[][jp1, :]
-        for i = 1 : n
+        for i = 1 : N[]
             dky[i] = c * YP1[][i] + s *dky[i]
         end
     end
@@ -825,7 +849,7 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
         return
     end
     r = h ^ (-k)
-    for i in 1 : n
+    for i in 1 : N[]
         dky[i] *= r
     end
     return
@@ -897,11 +921,10 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     end
     prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
-
-    while 1
+    while true
         if m[] == 0
             if IPUP[] > 0
-                prja(neq, y, prob.f, prob.p)
+                prja(neq, y, prob)
                 IPUP[] = 0
                 RC[] = 1.0
                 NSLP[] = NST[]
@@ -916,6 +939,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         if MITER[] == 0
+            global YP1
             YP1[] = YH[][2, :]
             for i in 1:N[]
                 SAVF[][i] = H[] * SAVF[][i] - YP1[][i]
@@ -945,14 +969,14 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
         end
         if m[] != 0 || METH[] != 1
             if m[] != 0
-                rm = 104
+                rm = 1024
                 if del[] <= (1024 * delp[])
                     rm = del[] / delp[]
                 end
                 rate = max(rate, rm)
                 CRATE[] = max(0.2 * CRATE[], rm)
             end
-            dcon = del[] * min(1, 1.5 * CRATE[]) / (TESCO[NQ[]][2] * CONIT[])
+            dcon = del[] * min(1, 1.5 * CRATE[]) / (TESCO[NQ[], 2] * CONIT[])
             if dcon <= 1
                 PDEST[] = max(PDEST[], rate / abs(H[] * EL[1]))
                 if PDEST[] != 0
@@ -994,8 +1018,8 @@ function corfailure(told::Ref{Float64}, rh::Ref{Float64}, ncf::Ref{Int},
         for i1 in j : NQ[]
             YP1[] = YH[][i1, :]
             YP2[] = YH[][i1, :]
-            for i in 1 : n
-                YP1[i] -= YP2[i]
+            for i in 1 : N[]
+                YP1[i] -= YP2[][i]
             end
         end
     end
@@ -1015,13 +1039,13 @@ function solsy(y::Float64)
         return
     end
     if MITER[] == 2
-        y = WM[]\y
+        y = WM[] \ y
     end
     return
 end
 
 function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64})
-	if (METH[] == 1) 
+    if (METH[] == 1) 
 		if (NQ[] > 5)
             return
         end
@@ -1106,7 +1130,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
 end
 
 function endstoda()
-    r = 1 / TESCO[NQU[]][2]
+    r = 1 / TESCO[NQU[], 2]
     for i in 1:N[]
         ACOR[][i] *= r
     end
@@ -1115,13 +1139,13 @@ function endstoda()
     return
 end
 
-function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderflag::Ref{Int})
+function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Ref{Float64}, orderflag::Ref{Int})
     orderflag[] = 0
     exsm = 1 / L[]
     rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
     rhdn = 0
     if NQ[] != 1
-        ddn = vmnorm(N[], YH[][1, :], EWT[]) / TESCO[NQ[]][1]
+        ddn = vmnorm(N[], YH[][1, :], EWT[]) / TESCO[NQ[], 1]
         exdn = 1 / NQ[]
         rhdn = 1 / (1.3 * (ddn ^ exdn) + 0.0000013)
     end
@@ -1176,12 +1200,12 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderf
     if METH[] == 1
         if rh[] * pdh[] * 1.00001 < SM1[newq]
             if KFLAG[] == 0 && rh[] < 1.1
-                IALTH = 3
+                IALTH[] = 3
                 return
             end
         else
             if KFLAG[] == 0 && rh[] < 1.1
-                IALTH = 3
+                IALTH[] = 3
                 return
             end
         end
@@ -1199,5 +1223,15 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, orderf
     return
 end
 
-
-end # module
+function rober(du,u,p,t)
+    y₁,y₂,y₃ = u
+    k₁,k₂,k₃ = p
+    du[1] = -k₁*y₁+k₃*y₂*y₃
+    du[2] =  k₁*y₁-k₂*y₂^2-k₃*y₂*y₃
+    du[3] =  k₂*y₂^2
+    nothing
+  end
+  
+  prob = ODEProblem(rober,[1.0,0.0,0.0],(0.0,1e5),(0.04,3e7,1e4))
+  sol2 = solve(prob, LSODA())
+#end # module
