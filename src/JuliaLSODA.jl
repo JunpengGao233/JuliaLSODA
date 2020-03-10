@@ -41,7 +41,7 @@ const CM1 = zeros(12)
 const CM2 = zeros(5)
 
 @defconsts [YH, WM] Ref{Matrix{Float64}}(zeros(1,2))
-@defconsts [YP1, YP2, EWT, SAVF, ACOR] Ref{Vector{Float64}}(zeros(2))
+@defconsts [EWT, SAVF, ACOR] Ref{Vector{Float64}}(zeros(2))
 
 struct LSODA <: DiffEqBase.AbstractODEAlgorithm
 end
@@ -58,17 +58,18 @@ function terminate!(istate::Ref{Int})
 end
 
 function terminate2!(y::Vector{Float64}, t::Ref{Float64})
-    YP1[] = YH[][1,:]
+    YP1 = @view YH[][1,:]
     for i in 1:N[]
-        y[i] = YP1[][i]
+        y[i] = YP1[i]
     end
     t[] = TN[]
     ILLIN[] = 0
+    @show t
     return
 end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, icrit::Float64, istate::Ref{Int})
-    YP[] = YH[][1,:]
+    YP1 = @view YH[][1,:]
     for i in 1:N[]
         y[i] = YP1[i]
     end
@@ -78,6 +79,7 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
     end
     istate[] = 2
     ILLIN[] = 0
+    @show y
     return
 end
 
@@ -94,7 +96,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 
     t = Ref(first(prob.tspan))
     neq = length(prob.u0)
-
+    global YP1,YP2
     # NOTE!!! this function mutates `prob.u0`
     y = prob.u0
     N[] = neq
@@ -164,17 +166,14 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         MXNCF[] = 10
         #prob.f(du,u,p,t)
         #(double t, double *y, double *ydot, void *data)
-        prob.f(YH[][2,:], y, prob.p, t[])
-        @show YH[][2,:]
-        @show y
+        @views prob.f(YH[][2,:], y, prob.p, t[])
         NFE[] = 1
-        YP1[] = YH[][1,:]
+        YP1 = @view YH[][1,:]
         for i in 1:N[]
-            YP1[][i] = y[i]
+            YP1[i] = y[i]
         end
         NQ[] = 1
         H[] = 1.0
-        EWT[] = similar(y)
         ewset!(rtol, atol, y)
         for i in 1:N[]
             if EWT[][i] <= 0
@@ -192,20 +191,21 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             if tdist < 2 * eps() *w0
                 @warn("[lsoda] tout too close to t to start integration")
                 terminate!(istate)
+                return
             end
             tol = rtol[]
             if tol <= 0.0
                 for i in 1:N[]
                     ayi = abs(y[i])
                     if ayi != 0
-                        tol = max(rtol[], atol[]/ayi)
+                        tol = max(tol[], atol[]/ayi)
                     end
                 end
             end
             tol = max(tol, 100 * eps())
             tol = min(tol, 0.001)
             sum = vmnorm(N[], YH[][2,:], EWT[])
-            sum = 1 / (tol * 100 * eps())
+            sum = 1 / (tol * 100 * eps()) + tol * sum * sum
             h0 = 1 / sqrt(sum)
             h0 = min(h0, tdist)
             # h0 = h0 * ((tout - t[] >= 0) ? 1 : -1)
@@ -214,9 +214,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         rh = abs(h0) * HMXI[]
         rh > 1 && (h0 /= rh)
         H[] = h0
-        YP1[] = YH[][2,:]
+        YP1 = @view YH[][2,:]
         for i in 1:N[]
-            YP1[][i] *= h0
+            YP1[i] *= h0
         end
     end
 
@@ -225,10 +225,11 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         NSLAST[] = NST[]
         if itask == 1
             if ((TN[] - tout) * H[] >= 0)
-                intdy!(tout, 0, y, iflag[])
+                intdy!(tout, 0, y, iflag)
                 if iflag[] != 0
                     @warn("[lsoda] trouble from intdy, itask = $itask, tout = $tout\n")
                     terminate!(istate)
+                    return
                 end
                 t[] = tout
                 istate[] = 2
@@ -276,7 +277,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             hmx = abs(TN[]) + abs(H[])
             ihit = abs(TN[] - tcrit) <= (100 * eps() *hmx)
-            if ihit
+            if Bool(ihit)
                 t[] = tcrit
                 successreturn!(y, t, itask, tcrit, istate)
                 return
@@ -301,7 +302,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         if (istate[] != 1 || NST[] != 0)
             #@show NST[]
             #@show NSLAST[]
-            if ((NST[]-NSLAST[]) >= MXSTEP[])
+            if ((NST[] - NSLAST[]) >= MXSTEP[])
                 @warn("[lsoda] $(MXSTEP[]) steps taken before reaching tout\n")
                 istate[] = -1
                 terminate2!(y, t)
@@ -349,17 +350,17 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 end
             end
         end
-        count1 +=1
+        count1+=1
+        @show count1
         stoda(neq, prob)
-        
+        @show itask
+        @show istate[]
         #Block f#
         if KFLAG[] == 0
-            count2 += 1
             INIT[] = 1
             if METH[] != MUSED[]
-                @show count3
                 TSW[] = TN[]
-                MAXORD[] = MXORDS[]
+                MAXORD[] = MXORDN[]
                 if METH[] == 2
                     MAXORD[] = MXORDS[]
                 end
@@ -375,7 +376,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 if (TN[] - tout) * H[] < 0
                     continue
                 end
-                intdy(tout, 0, y, iflag)
+                intdy!(tout, 0, y, iflag)
                 t[] = tout
                 istate[] = 2
                 ILLIN[] = 0
@@ -394,7 +395,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
             if itask == 4
                 if (TN[] - tout) * H[] >= 0
-                    intdy(tout, 0, y, iflag)
+                    intdy!(tout, 0, y, iflag)
                     t[] = tout
                     istate[] =2
                     ILLIN[] = 0
@@ -402,7 +403,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 else
                     hmx = abs(TN[]) + abs(H[])
                     ihit = abs(tn - tcrit) <= 100 * eps() *hmx
-                    if ihit
+                    if Bool(ihit)
                         successreturn(y, t, itask, ihit, tcrit, istate)
                         return
                     end
@@ -443,7 +444,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                     IMXER[] = 1
                 end
             end
-            terminate2(y, t)
+            terminate2!(y, t)
             return
         end
     end
@@ -460,7 +461,7 @@ function stoda(neq::Int, prob)
     del = Ref(0.0)
     m = Ref(0)
     pdh = Ref(0.0)
-    rh = Ref(0.0)    
+    rh = Ref(0.0)
     orderflag = Ref(0)
     IERPJ[] = 0
     IERSL[] = 0
@@ -488,7 +489,7 @@ function stoda(neq::Int, prob)
         end
         cfode(1)
         for i in 1:12
-            CM1[i] = TESCO[i, 2] * ELCO[i,i + 1]
+            CM1[i] = TESCO[i, 2] * ELCO[i, i + 1]
         end
         resetcoeff()
     end
@@ -500,7 +501,7 @@ function stoda(neq::Int, prob)
         end
         if METH[] != MUSED[]
             cfode(METH[])
-            IALTH[] = 1
+            IALTH[] = L[]
             resetcoeff()
         end
         if H[] != HOLD[]
@@ -528,15 +529,15 @@ function stoda(neq::Int, prob)
             TN[] += H[]
             for j in NQ[] : -1 : 1
                 for i1 in j : NQ[]
-                    YP1[] = YH[][i1, :]
-                    YP2[] = YH[][i1 + 1, :]
+                    YP1 = @view YH[][i1, :]
+                    YP2 = @view YH[][i1 + 1, :]
                     for i in 1:N[]
-                        YP1[][i] += YP2[][i]
+                        YP1[i] += YP2[i]
                     end
                 end
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
-            #Ref??? y 
+            #Ref??? y
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
             if corflag[] == 0
                 break
@@ -567,10 +568,10 @@ function stoda(neq::Int, prob)
             NQU[] = NQ[]
             MUSED[] = METH[]
             for j = 1:L[]
-                YP1[] = YH[][j, :]
+                YP1 = @view YH[][j, :]
                 r = EL[j]
                 for i = 1:N[]
-                    YP1[][i] += r * ACOR[][i]
+                    YP1[i] += r * ACOR[][i]
                 end
             end
             ICOUNT[] -= 1
@@ -588,9 +589,9 @@ function stoda(neq::Int, prob)
             if IALTH[] == 0
                 rhup = Ref(0.0)
                 if L[] != LMAX[]
-                    YP1[] = YH[][LMAX[], :]
+                    YP1 = @view YH[][LMAX[], :]
                     for i in 1:N[]
-                        SAVF[][i] = ACOR[][i] - YP1[][i]
+                        SAVF[][i] = ACOR[][i] - YP1[i]
                     end
                     dup = vmnorm(N[], SAVF[], EWT[]) / TESCO[NQ[], 3]
                     exup = 1 / (L[] + 1)
@@ -602,9 +603,10 @@ function stoda(neq::Int, prob)
                     break
                 end
                 if orderflag[] == 1
-                    rh[] = max(rh, HMIN[] / abs(H[]))
+                    rh[] = max(rh[], HMIN[] / abs(H[]))
                     scaleh(rh, pdh)
                     RMAX[] = 10.0
+                    endstoda()
                     break
                 end
                 if orderflag[] == 2
@@ -620,9 +622,9 @@ function stoda(neq::Int, prob)
                 endstoda()
                 break
             end
-            YP1[] = YH[][LMAX[], :]
+            YP1 = @view YH[][LMAX[], :]
             for i in 1:N[]
-                YP1[][i] = ACOR[][i]
+                YP1[i] = ACOR[][i]
             end
             endstoda()
             break
@@ -631,10 +633,10 @@ function stoda(neq::Int, prob)
             TN[] = told[]
             for j in NQ[] : -1 : 1
                 for i1 in j:NQ[]
-                    YP1[] = YH[][i1, :]
-                    YP2[] = YH[][i1+1, :]
+                    YP1 = @view YH[][i1, :]
+                    YP2 = @view YH[][i1+1, :]
                     for i in 1:N[]
-                        YP1[][i] -= YP2[][i]
+                        YP1[i] -= YP2[i]
                     end
                 end
             end
@@ -646,7 +648,7 @@ function stoda(neq::Int, prob)
                 break
             end
             if KFLAG[] > -3
-                rhup[] = 0.0
+                rhup = Ref(0.0)
                 orderswitch(rhup, dsm, pdh, rh, orderflag)
                 if orderflag[] == 1 || orderflag[] == 0
                     if orderflag[] == 0
@@ -671,17 +673,17 @@ function stoda(neq::Int, prob)
                     rh[] = 0.1
                     rh[] = max(HMIN[] / abs(H[]), rh[])
                     H[] *= rh[]
-                    YP1[] = YH[][1,:]
+                    YP1 = @view YH[][1,:]
                     for i in 1:N[]
-                        y[i] = YP1[][i]
+                        y[i] = YP1[i]
                     end
-                    prob.f(SAVF[], y, prob.p, TN[])
+                    @views prob.f(SAVF[], y, prob.p, TN[])
                     NFE[] += 1
-                    YP1[] = YH[][2,:]
+                    YP1 = @view YH[][2,:]
                     for i in 1:N[]
-                        YP1[][i] = H[] * SAVF[][i]
+                        YP1[i] = H[] * SAVF[][i]
                     end
-                    IPUP[] = miter[]
+                    IPUP[] = MITER[]
                     IALTH[] = 5
                     if NQ[] == 1
                         continue
@@ -754,7 +756,7 @@ function cfode(meth::Int)
         for i = 1:nqp1
             ELCO[NQ[], i] = pc[i] / pc[2]
         end
-        ELCO[NQ[], 2] = 1
+        ELCO[NQ[], 2] = 1.0
         TESCO[NQ[], 1] = rq1fac
         TESCO[NQ[], 2] = Float64(nqp1) / ELCO[NQ[], 1]
         TESCO[NQ[], 3] = Float64(NQ[] + 2) / ELCO[NQ[], 1]
@@ -766,7 +768,7 @@ end
 function scaleh(rh::Ref{Float64}, pdh::Ref{Float64})
     rh[] = min(rh[], RMAX[])
     rh[] = rh[] / max(1, abs(H[] * HMXI[] * rh[]))
-    if METH[] ==1 
+    if METH[] ==1
         IRFLAG[] = 0
         pdh[] = max(abs(H[]) * PDLAST[], 0.000001)
         if rh[] * pdh[] * 1.00001 >= SM1[NQ[]]
@@ -777,9 +779,9 @@ function scaleh(rh::Ref{Float64}, pdh::Ref{Float64})
     r = 1.0
     for j in 2:L[]
         r *= rh[]
-        YP1[] = YH[][j, :]
+        YP1 = @view YH[][j, :]
         for i = 1:N[]
-            YP1[][i] *= r
+            YP1[i] *= r
         end
     end
     H[] *= rh[]
@@ -814,7 +816,7 @@ end
 
 function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
     iflag[] = 0
-    if (k < 0 || k > NQ)
+    if (k < 0 || k > NQ[])
         @warn("[intdy] k = $k illegal\n")
         iflag[] = -1
         return
@@ -830,9 +832,9 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
     for jj in (L[] - k):NQ[]
         c *= jj
     end
-    YP1[] = YH[][1,:]
+    YP1 = @view YH[][L[],:]
     for i in 1:N[]
-        dky[i] = c *YP1[][i]
+        dky[i] = c * YP1[i]
     end
     for j in (NQ[] -1 : -1 : k)
         jp1 = j + 1
@@ -840,9 +842,9 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
         for jj in jp1 - k : j
             c *= jj
         end
-        YP1[] = YH[][jp1, :]
+        YP1 = @view YH[][jp1, :]
         for i = 1 : N[]
-            dky[i] = c * YP1[][i] + s *dky[i]
+            dky[i] = c * YP1[i] + s *dky[i]
         end
     end
     if k == 0
@@ -867,14 +869,14 @@ function prja(neq::Int, prob)
         fac = vmnorm(N[], SAVF[], EWT[])
         r0 = 1000 * abs(H[]) * eps() * N[] *fac
         if r0 == 0.0
-            r0 = 1
+            r0 = 1.0
         end
         for j in 1:N[]
             yj = y[j] ## y need to be changed
             r = max(sqrt(eps()) * abs(yj), r0/EWT[][j])
             y[j] += r
             fac = -hl0 / r
-            prob.f(ACOR[], y, prob.p, TN[])
+            @views prob.f(ACOR[], y, prob.p, TN[])
             for i in 1:N[]
                 WM[][i, j] = ACOR[][i] - SAVF[][i] * fac
             end
@@ -900,7 +902,7 @@ function fnorm(n::Int, a::Matrix{Float64}, w::Vector{Float64})
         sum = 0
         ap1 = a[i,:]
         for j in 1:n
-            sum +=abs(ap1[j]) / w[j]
+            sum += abs(ap1[j]) / w[j]
         end
         an = max(an, sum * w[i])
     end
@@ -915,11 +917,11 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     corflag[] = 0
     rate = 0
     del[] = 0
-    YP1[] = YH[][1, :]
+    YP1 = @view YH[][1, :]
     for i in 1:N[]
-        y[i] = YP1[][i]
+        y[i] = YP1[i]
     end
-    prob.f(SAVF[], y, prob.p, TN[])
+    @views prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
     while true
         if m[] == 0
@@ -939,29 +941,28 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         if MITER[] == 0
-            global YP1
-            YP1[] = YH[][2, :]
+            YP1 = @view YH[][2, :]
             for i in 1:N[]
-                SAVF[][i] = H[] * SAVF[][i] - YP1[][i]
+                SAVF[][i] = H[] * SAVF[][i] - YP1[i]
                 y[i] = SAVF[][i] - ACOR[][i]
             end
             del[] = vmnorm(N[], y, EWT[])
-            YP1[] = YH[][1, :]
+            YP1 = @view YH[][1, :]
             for i = 1:N[]
-                y[i] = YP1[][i] + EL[1] * SAVF[][i]
+                y[i] = YP1[i] + EL[1] * SAVF[][i]
                 ACOR[][i] = SAVF[][i]
             end
         else
-            YP1[] = YH[][2, :]
+            YP1 = @view YH[][2, :]
             for i in 1:N[]
-                y[i] = H[] * SAVF[][i] - (YP1[][i] + ACOR[][i])
+                y[i] = H[] * SAVF[][i] - (YP1[i] + ACOR[][i])
             end
-            solsy(y)
+            y[:] = solsy(y)
             del[] = vmnorm(N[], y, EWT[])
-            YP1[] = YH[][1, :]
+            YP1 = @view YH[][1, :]
             for i in 1:N[]
                 ACOR[][i] += y[i]
-                y[i] = YP1[][i] +EL[1] *ACOR[][i]
+                y[i] = YP1[i] + EL[1] *ACOR[][i]
             end
         end
         if del[] <= 100 *pnorm *eps()
@@ -976,8 +977,8 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 rate = max(rate, rm)
                 CRATE[] = max(0.2 * CRATE[], rm)
             end
-            dcon = del[] * min(1, 1.5 * CRATE[]) / (TESCO[NQ[], 2] * CONIT[])
-            if dcon <= 1
+            dcon = del[] * min(1.0, 1.5 * CRATE[]) / (TESCO[NQ[], 2] * CONIT[])
+            if dcon <= 1.0
                 PDEST[] = max(PDEST[], rate / abs(H[] * EL[1]))
                 if PDEST[] != 0
                     PDLAST[] = PDEST[]
@@ -995,15 +996,15 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             m[] = 0
             rate = 0
             del[] = 0
-            YP1 = YH[][1, :]
+            YP1 = @view YH[][1, :]
             for i in 1:N[]
-                y[i] = YP1[][i]
+                y[i] = YP1[i]
             end
-            prob.f(SAVF[], y, prob.f, TN[])
+            @views prob.f(SAVF[], y, prob.f, TN[])
             NFE[] += 1
         else
             delp[] = del[]
-            prob.f(SAVF[], y[], prob.p, TN[])
+            @views prob.f(SAVF[], y, prob.p, TN[])
             NFE[] += 1
         end
     end
@@ -1014,12 +1015,12 @@ function corfailure(told::Ref{Float64}, rh::Ref{Float64}, ncf::Ref{Int},
     ncf[] += 1
     RMAX[] = 2.0
     TN[] = told[]
-    for j in NQ[] : -1 : i
+    for j in NQ[] : -1 : 1
         for i1 in j : NQ[]
-            YP1[] = YH[][i1, :]
-            YP2[] = YH[][i1, :]
+            YP1 = @view YH[][i1, :]
+            YP2 = @view YH[][i1 + 1, :]
             for i in 1 : N[]
-                YP1[i] -= YP2[][i]
+                YP1[i] -= YP2[i]
             end
         end
     end
@@ -1039,23 +1040,22 @@ function solsy(y::Float64)
         return
     end
     if MITER[] == 2
-        y = WM[] \ y
+        return WM[] \ y
     end
-    return
 end
 
 function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64})
-    if (METH[] == 1) 
+    if (METH[] == 1)
 		if (NQ[] > 5)
             return
         end
-		if (dsm <= (100 * pnorm * eps()) || pdest == 0) 
+		if (dsm <= (100 * pnorm * eps()) || PDEST[] == 0)
 			if (IRFLAG[] == 0)
                 return
             end
 			rh2 = 2.0
             nqm2 = min(NQ[], MXORDS[])
-		else 
+		else
 			exsm = 1 / L[]
 			rh1 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
 			rh1it = 2 * rh1
@@ -1071,7 +1071,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
 				lm2p1 = lm2 + 1
 				dm2 = vmnorm(N[], YH[][lm2p1,:], EWT[]) / CM2[MXORDS[]]
 				rh2 = 1 / (1.2 * (dm2 ^ exm2) + 0.0000012)
-			else 
+			else
 				dm2 = dsm * (CM1[NQ[]] / CM2[NQ[]])
 				rh2 = 1 / (1.2 * (dm2 ^ exsm) + 0.0000012)
 				nqm2 = NQ[]
@@ -1111,8 +1111,8 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
         rh1it = SM1[nqm1] / pdh[]
     end
     rh1 = min(rh1, rh1it)
-    rh2 = 1 / (1.2 *(dsm ^ exsm) + 0.0000012)
-    if rh1 * RATIO[] < 5 * rh2
+    rh2 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
+    if (rh1 * RATIO[]) < (5 * rh2)
         return
     end
     alpha = max(0.001, rh1)
@@ -1145,7 +1145,7 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
     rhdn = 0
     if NQ[] != 1
-        ddn = vmnorm(N[], YH[][1, :], EWT[]) / TESCO[NQ[], 1]
+        ddn = vmnorm(N[], YH[][L[], :], EWT[]) / TESCO[NQ[], 1]
         exdn = 1 / NQ[]
         rhdn = 1 / (1.3 * (ddn ^ exdn) + 0.0000013)
     end
@@ -1185,9 +1185,9 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
                 r = EL[L[]] / L[]
                 NQ[] = L[]
                 L[] = NQ[] + 1
-                YP1[] = YH[][l[],:]
+                YP1 = @view YH[][L[],:]
                 for i in 1:N[]
-                    YP1[][i] = ACOR[][i] * r
+                    YP1[i] = ACOR[][i] * r
                 end
                 orderflag[] = 2
                 return
@@ -1230,8 +1230,35 @@ function rober(du,u,p,t)
     du[2] =  k₁*y₁-k₂*y₂^2-k₃*y₂*y₃
     du[3] =  k₂*y₂^2
     nothing
-  end
-  
-  prob = ODEProblem(rober,[1.0,0.0,0.0],(0.0,1e5),(0.04,3e7,1e4))
-  sol2 = solve(prob, LSODA())
-#end # module
+end
+
+prob = ODEProblem(rober,[1.0,0.0,0.0],(0.0,1e5),(0.04,3e7,1e4))
+
+sol2 = solve(prob, LSODA())
+
+function f(du,u,p,t)
+    du[1] = 1.01*u[1]
+end
+u0=[1/2]
+tspan = (0.0,1.0)
+prob = ODEProblem(f,u0,tspan)
+"""
+l = 1.0                             # length [m]
+m = 1.0                             # mass[m]
+g = 9.81                            # gravitational acceleration [m/s²]
+
+function pendulum!(du,u,p,t)
+    du[1] = u[2]                    # θ'(t) = ω(t)
+    du[2] = -3g/(2l)*sin(u[1]) + 3/(m*l^2)*p(t) # ω'(t) = -3g/(2l) sin θ(t) + 3/(ml^2)M(t)
+end
+
+θ₀ = 0.01                           # initial angular deflection [rad]
+ω₀ = 0.0                            # initial angular velocity [rad/s]
+u₀ = [θ₀, ω₀]                       # initial state vector
+tspan = (0.0,10.0)                  # time interval
+
+M = t->0.1sin(t)                    # external torque [Nm]
+
+prob = ODEProblem(pendulum!,u₀,tspan,M)
+sol = solve(prob, LSODA())
+"""
