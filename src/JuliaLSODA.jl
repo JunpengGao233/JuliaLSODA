@@ -159,7 +159,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         HU[] = 0.0
         NQU[] = 0
         MUSED[] = 0
-        MITER[] = 0
+        MITER[] = 2
         CCMAX[] = 0.3
         MAXCOR[] = 3
         MSBP[] = 20
@@ -205,7 +205,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             tol = max(tol, 100 * eps())
             tol = min(tol, 0.001)
             sum = vmnorm(N[], YH[][2,:], EWT[])
-            sum = 1 / (tol * 100 * eps()) + tol * sum * sum
+            sum = 1 / (tol * w0 * w0) + tol * sum * sum
             h0 = 1 / sqrt(sum)
             h0 = min(h0, tdist)
             # h0 = h0 * ((tout - t[] >= 0) ? 1 : -1)
@@ -351,10 +351,10 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             end
         end
         count1+=1
-        @show count1
         stoda(neq, prob)
         @show itask
-        @show istate[]
+        @show count1
+        @show KFLAG[]
         #Block f#
         if KFLAG[] == 0
             INIT[] = 1
@@ -438,7 +438,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             big = 0
             IMXER[] = 1
             for i in 1:N[]
-                sizing = abs(ACOR[i]) * EWT[][i]
+                sizing = abs(ACOR[][i]) * EWT[][i]
                 if big < sizing
                     big = sizing
                     IMXER[] = 1
@@ -858,6 +858,7 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int})
 end
 
 function prja(neq::Int, prob)
+    y = prob.u0
     NJE[] += 1
     IERPJ[] = 0
     JCUR[] = 1
@@ -878,7 +879,7 @@ function prja(neq::Int, prob)
             fac = -hl0 / r
             @views prob.f(ACOR[], y, prob.p, TN[])
             for i in 1:N[]
-                WM[][i, j] = ACOR[][i] - SAVF[][i] * fac
+                WM[][i, j] = (ACOR[][i] - SAVF[][i]) * fac
             end
             y[j] = yj
         end
@@ -926,7 +927,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     while true
         if m[] == 0
             if IPUP[] > 0
-                prja(neq, y, prob)
+                prja(neq, prob)
                 IPUP[] = 0
                 RC[] = 1.0
                 NSLP[] = NST[]
@@ -1000,7 +1001,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             for i in 1:N[]
                 y[i] = YP1[i]
             end
-            @views prob.f(SAVF[], y, prob.f, TN[])
+            @views prob.f(SAVF[], y, prob.p, TN[])
             NFE[] += 1
         else
             delp[] = del[]
@@ -1033,7 +1034,7 @@ function corfailure(told::Ref{Float64}, rh::Ref{Float64}, ncf::Ref{Int},
     IPUP[] = MITER[]
 end
 
-function solsy(y::Float64)
+function solsy(y::Vector{Float64})
     IERSL[] = 0
     if MITER[] != 2
         print("solsy -- miter != 2\n")
@@ -1223,6 +1224,9 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     return
 end
 
+#end #module
+
+"""
 function rober(du,u,p,t)
     y₁,y₂,y₃ = u
     k₁,k₂,k₃ = p
@@ -1236,13 +1240,14 @@ prob = ODEProblem(rober,[1.0,0.0,0.0],(0.0,1e5),(0.04,3e7,1e4))
 
 sol2 = solve(prob, LSODA())
 
+
 function f(du,u,p,t)
     du[1] = 1.01*u[1]
 end
 u0=[1/2]
 tspan = (0.0,1.0)
 prob = ODEProblem(f,u0,tspan)
-"""
+
 l = 1.0                             # length [m]
 m = 1.0                             # mass[m]
 g = 9.81                            # gravitational acceleration [m/s²]
