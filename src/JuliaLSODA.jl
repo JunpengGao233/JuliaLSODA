@@ -1252,12 +1252,4 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     return
 end
 
-function fex(du, u, p, t)
-    du[1] = 1e4 * u[2] * u[3] - 0.04e0 * u[1]
-    du[3] = 3e7 * u[2] * u[2]
-    du[2] = - (du[1] + du[3])
-end
-
-prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4E0))
-sol2 = solve(prob, LSODA())
 end  #module
