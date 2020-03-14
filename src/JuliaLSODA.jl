@@ -1,4 +1,4 @@
-#module JuliaLSODA
+module JuliaLSODA
 
 using LinearAlgebra
 
@@ -64,7 +64,6 @@ function terminate2!(y::Vector{Float64}, t::Ref{Float64})
     end
     t[] = TN[]
     ILLIN[] = 0
-    @show t
     return
 end
 
@@ -75,11 +74,12 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
     end
     t[] = TN[]
     if itask == 4 || itask == 5
-        ihit && (t = tcrit)
+        if bool(ihit)
+            t = tcrit
+        end
     end
     istate[] = 2
     ILLIN[] = 0
-    @show y
     return
 end
 
@@ -87,12 +87,25 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
-    mxstp0 = 500
+    mxstp0 = 5000
     mxhnl0 = 10
     iflag = Ref(0)
-    1 <= istate[] <= 3 || (@warn("[lsoda] illegal istate = $istate\n") || terminate(istate[]))
-    !(itask < 1 || itask > 5) || (@warn( "[lsoda] illegal itask = $itask\n") || terminate(istate[]))
-    !(INIT[] == 0 &&(istate[] == 2 || istate[] == 3)) || (@warn("[lsoda] istate > 1 but lsoda not initialized") || terminate(istate[]))
+    if istate[] < 1 || istate[] > 3
+       @warn("[lsoda] illegal istate = $istate\n")
+       terminate!(istate)
+    end
+    if itask < 1 || itask > 5
+        @warn("[lsoda] illegal itask = $itask\n")
+        terminate!(istate)
+    end
+    if (INIT[] == 0 && (istate[] == 2 || istate[] == 3))
+        @warn("[lsoda] illegal itask = $itask\n")
+        terminate!(istate)
+    end
+    if (INIT[] == 0 && (istate[] ==2 || istate[] == 3))
+        @warn("[lsoda] istate > 1 but lsoda not initialized")
+        terminate!(istate)
+    end
 
     t = Ref(first(prob.tspan))
     neq = length(prob.u0)
@@ -110,6 +123,20 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
     end
     ###Block b ###
+    if istate[] == 1 || istate[] == 3
+        ntrep = 0
+        if neq <= 0
+            @warn("[lsoda] neq = %d is less than 1\n", neq)
+            terminate!(istate)
+            return
+        end
+        if istate[] == 3 && neq > N[]
+            @warn("[lsoda] istate = 3 and neq increased\n")
+            terminate!(istate)
+            return
+        end
+        N[] = neq
+    end
 
     if iopt == false
         IXPR[] = 0
@@ -140,7 +167,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 h0 = tcrit - t[]
             end
         end
-        METH[] = 1
+        METH[] = 2
         g_nyh = N[]
         nyh = N[]
         g_lenyh = 1 + max(MXORDN[], MXORDS[])
@@ -159,7 +186,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         HU[] = 0.0
         NQU[] = 0
         MUSED[] = 0
-        MITER[] = 2
+        MITER[] = 0
         CCMAX[] = 0.3
         MAXCOR[] = 3
         MSBP[] = 20
@@ -296,12 +323,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
     local count2 = 0
     local count3 = 0
     while true
-        #@show count1
-        #@show count2
-        #@show count3
         if (istate[] != 1 || NST[] != 0)
-            #@show NST[]
-            #@show NSLAST[]
             if ((NST[] - NSLAST[]) >= MXSTEP[])
                 @warn("[lsoda] $(MXSTEP[]) steps taken before reaching tout\n")
                 istate[] = -1
@@ -352,9 +374,6 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
         count1+=1
         stoda(neq, prob)
-        @show itask
-        @show count1
-        @show KFLAG[]
         #Block f#
         if KFLAG[] == 0
             INIT[] = 1
@@ -538,7 +557,15 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
+            println("Previous---")
+            @show NQ[]
+            @show METH[]
+            println("Previous---")
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
+            println("aftercorrec---")
+            @show NQ[]
+            @show METH[]
+            println("aftercorrec--")
             if corflag[] == 0
                 break
             end
@@ -1046,6 +1073,8 @@ function solsy(y::Vector{Float64})
 end
 
 function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64})
+    @show METH[]
+    println("methodswitch_____")
     if (METH[] == 1)
 		if (NQ[] > 5)
             return
@@ -1107,7 +1136,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
         exm1 = exsm
     end
     rh1it = 2 * rh1
-    pdh[] = PDNORM * abs(H[])
+    pdh[] = PDNORM[] * abs(H[])
     if (pdh[] * rh1) > 0.00001
         rh1it = SM1[nqm1] / pdh[]
     end
@@ -1141,6 +1170,7 @@ function endstoda()
 end
 
 function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Ref{Float64}, orderflag::Ref{Int})
+    println("NQ[] = $(NQ[]) because of orderswitch func")
     orderflag[] = 0
     exsm = 1 / L[]
     rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
@@ -1223,47 +1253,4 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     orderflag[] = 2
     return
 end
-
-#end #module
-
-"""
-function rober(du,u,p,t)
-    y₁,y₂,y₃ = u
-    k₁,k₂,k₃ = p
-    du[1] = -k₁*y₁+k₃*y₂*y₃
-    du[2] =  k₁*y₁-k₂*y₂^2-k₃*y₂*y₃
-    du[3] =  k₂*y₂^2
-    nothing
-end
-
-prob = ODEProblem(rober,[1.0,0.0,0.0],(0.0,1e5),(0.04,3e7,1e4))
-
-sol2 = solve(prob, LSODA())
-
-
-function f(du,u,p,t)
-    du[1] = 1.01*u[1]
-end
-u0=[1/2]
-tspan = (0.0,1.0)
-prob = ODEProblem(f,u0,tspan)
-
-l = 1.0                             # length [m]
-m = 1.0                             # mass[m]
-g = 9.81                            # gravitational acceleration [m/s²]
-
-function pendulum!(du,u,p,t)
-    du[1] = u[2]                    # θ'(t) = ω(t)
-    du[2] = -3g/(2l)*sin(u[1]) + 3/(m*l^2)*p(t) # ω'(t) = -3g/(2l) sin θ(t) + 3/(ml^2)M(t)
-end
-
-θ₀ = 0.01                           # initial angular deflection [rad]
-ω₀ = 0.0                            # initial angular velocity [rad/s]
-u₀ = [θ₀, ω₀]                       # initial state vector
-tspan = (0.0,10.0)                  # time interval
-
-M = t->0.1sin(t)                    # external torque [Nm]
-
-prob = ODEProblem(pendulum!,u₀,tspan,M)
-sol = solve(prob, LSODA())
-"""
+end  #module
