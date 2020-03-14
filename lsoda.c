@@ -1718,11 +1718,13 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-			if (nfe >= 37)
+			if (nfe >= 50)
 				DOPRINT = 1;
-			DOPRINT && fprintf(stderr, "h = %f, nfe = %d, method = %d\n",h,nfe,meth); //myprint
+			DOPRINT && fprintf(stderr,"nfe = %d\n", nfe );
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
 			//fprintf(stderr, "corflag = %d\n", corflag); //myprint
+			DOPRINT && fprintf(stderr,"y = %f, %f, %f \n",y[1],y[2],y[3]);
+			DOPRINT && fprintf(stderr, "h after correc = %f\n",h);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -1787,6 +1789,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
    No method switch is being made.  Do the usual step/order selection.
 */
 			ialth--;
+			DOPRINT && fprintf(stderr, "ialth = %d, orderflag = %d\n", ialth, orderflag);
 			if (ialth == 0) {
 				rhup = 0.;
 				if (l != lmax) {
@@ -1798,14 +1801,15 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					rhup = 1. / (1.4 * pow(dup, exup) + 0.0000014);
 				}
 				orderswitch(&rhup, dsm, &pdh, &rh, &orderflag);
-/*
+				DOPRINT && fprintf(stderr, "have switched %d",orderflag);
+/*              
    No change in h or nq.
 */
 				if (orderflag == 0) {
 					endstoda();
 					break;
 				}
-/*
+/*              
    h is changed, but not nq.
 */
 				if (orderflag == 1) {
@@ -1826,7 +1830,8 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					endstoda();
 					break;
 				}
-			}	/* end if ( ialth == 0 )   */
+			}
+				/* end if ( ialth == 0 )   */
 			if (ialth > 1 || l == lmax) {
 				endstoda();
 				break;
@@ -2390,7 +2395,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 */
 		//DOPRINT && fprintf(stderr, "del = %f\n", *del); //myprint
 		if (*del <= 100. * pnorm * ETA) {
-			DOPRINT && fprintf(stderr, "break11111111111111111");
 			break;}
 		if (*m != 0 || meth != 1) {
 			if (*m != 0) {
@@ -2406,7 +2410,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 				pdest = max(pdest, rate / fabs(h * el[1]));
 				if (pdest != 0.)
 					pdlast = pdest;
-				DOPRINT && fprintf(stderr, "break222222222222222!\n");
 				break;
 			}
 		}
@@ -2423,7 +2426,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 		if (*m == maxcor || (*m >= 2 && *del > 2. * *delp)) {
 			if (miter == 0 || jcur == 1) {
 				corfailure(told, rh, ncf, corflag);
-				DOPRINT && fprintf(stderr, "break3333333333333!\n");
 				return;
 			}
 			ipup = miter;
