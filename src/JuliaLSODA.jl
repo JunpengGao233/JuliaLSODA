@@ -39,7 +39,7 @@ const ELCO = zeros(12, 13)
 const TESCO = zeros(12, 3)
 const CM1 = zeros(12)
 const CM2 = zeros(5)
-
+count1 = 0
 @defconsts [YH, WM] Ref{Matrix{Float64}}(zeros(1,2))
 @defconsts [EWT, SAVF, ACOR] Ref{Vector{Float64}}(zeros(2))
 
@@ -87,7 +87,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
-    mxstp0 = 5000
+    mxstp0 = 5
     mxhnl0 = 10
     iflag = Ref(0)
     if istate[] < 1 || istate[] > 3
@@ -557,16 +557,11 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            println("Previous---")
-            @show NQ[]
-            @show METH[]
-            println("Previous---")
+            println("correc before$(H[]) \n")
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
-            println("aftercorrec---")
-            @show NQ[]
-            @show METH[]
-            println("aftercorrec--")
+            @show corflag[]
             if corflag[] == 0
+                @show H[]
                 break
             end
             if corflag[] == 1
@@ -726,7 +721,7 @@ function stoda(neq::Int, prob)
 end
 
 function cfode(meth::Int)
-    pc = zeros(13)
+    pc = zeros(12)
     if meth == 1
         ELCO[1, 1] = 1.0
 		ELCO[1, 2] = 1.0
@@ -736,34 +731,34 @@ function cfode(meth::Int)
 		TESCO[12, 3] = 0.0
 		pc[1] = 1.0
         rqfac = 1.0
-        for NQ[] in 2:12
+        for nq = 2:12
             rq1fac = rqfac
-            rqfac = rqfac / NQ[]
-            nqm1 = NQ[] - 1
+            rqfac = rqfac / nq
+            nqm1 = nq - 1
             fnqm1 = Float64(nqm1)
-            nqp1 = NQ[] + 1
-            pc[NQ[]] = 0.0
-            for i in NQ[] : -1 : 2
+            nqp1 = nq + 1
+            pc[nq] = 0.0
+            for i in nq : -1 : 2
                 pc[i] = pc[i - 1] + fnqm1 * pc[i]
             end
             pc[1] = fnqm1 * pc[1]
             pint = pc[1]
             xpin = pc[1] / 2.0
             tsign = 1.0
-            for i in 2:NQ[]
+            for i in 2:nq
                 tsign = -tsign
                 pint += tsign * pc[i] / i
                 xpin += tsign * pc[i] / (i + 1)
             end
-            ELCO[NQ[], 1] = pint * rq1fac
-            ELCO[NQ[], 2] = 1.0
-            for i in 2: NQ[]
-                ELCO[NQ[], i + 1] = rq1fac * pc[i] / i
+            ELCO[nq, 1] = pint * rq1fac
+            ELCO[nq, 2] = 1.0
+            for i in 2: nq
+                ELCO[nq, i + 1] = rq1fac * pc[i] / i
             end
             agamq = rqfac * xpin
             ragq = 1.0 / agamq
-            TESCO[NQ[], 2] = ragq
-            if NQ[] < 12
+            TESCO[nq, 2] = ragq
+            if nq < 12
                 TESCO[nqp1, 1] = ragq * rqfac / nqp1
             end
             TESCO[nqm1, 3] = ragq
@@ -772,21 +767,21 @@ function cfode(meth::Int)
     end
     pc[1] = 1.0
     rq1fac = 1.0
-    for NQ[] in 1:5
-        fnq = Float64(NQ[])
-        nqp1 = NQ[] + 1
+    for nq in 1:5
+        fnq = Float64(nq)
+        nqp1 = nq + 1
         pc[nqp1] = 0
-        for i in NQ[] + 1 : -1 : 2
+        for i in nq  : -1 : 2
             pc[i] = pc[i - 1] + fnq * pc[i]
         end
         pc[1] *= fnq
         for i = 1:nqp1
-            ELCO[NQ[], i] = pc[i] / pc[2]
+            ELCO[nq, i] = pc[i] / pc[2]
         end
-        ELCO[NQ[], 2] = 1.0
-        TESCO[NQ[], 1] = rq1fac
-        TESCO[NQ[], 2] = Float64(nqp1) / ELCO[NQ[], 1]
-        TESCO[NQ[], 3] = Float64(NQ[] + 2) / ELCO[NQ[], 1]
+        ELCO[nq, 2] = 1.0
+        TESCO[nq, 1] = rq1fac
+        TESCO[nq, 2] = Float64(nqp1) / ELCO[nq, 1]
+        TESCO[nq, 3] = Float64(nq + 2) / ELCO[nq, 1]
         rq1fac /= fnq
     end
     return
@@ -943,7 +938,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     y = prob.u0
     m[] = 0
     corflag[] = 0
-    rate = 0
+    rate = 0.0
     del[] = 0
     YP1 = @view YH[][1, :]
     for i in 1:N[]
@@ -961,6 +956,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 CRATE[] = 0.7
                 if IERPJ[] != 0
                     corfailure(told, rh, ncf, corflag)
+                    println("corflag afterIERPJ corfailure %d\n",corflag)
                     return
                 end
             end
@@ -975,6 +971,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 y[i] = SAVF[][i] - ACOR[][i]
             end
             del[] = vmnorm(N[], y, EWT[])
+            @show y
             YP1 = @view YH[][1, :]
             for i = 1:N[]
                 y[i] = YP1[i] + EL[1] * SAVF[][i]
@@ -1015,7 +1012,11 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         m[] += 1
+        @show m[]
+        @show delp[]
         if m[] == MAXCOR[] || (m[] >= 2 && del[] > 2 * delp[])
+            @show JCUR[]
+            @show MITER[]
             if MITER[] == 0 || JCUR[] == 1
                 corfailure(told, rh, ncf, corflag)
                 return
@@ -1073,8 +1074,6 @@ function solsy(y::Vector{Float64})
 end
 
 function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64})
-    @show METH[]
-    println("methodswitch_____")
     if (METH[] == 1)
 		if (NQ[] > 5)
             return
@@ -1169,8 +1168,8 @@ function endstoda()
     return
 end
 
+
 function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Ref{Float64}, orderflag::Ref{Int})
-    println("NQ[] = $(NQ[]) because of orderswitch func")
     orderflag[] = 0
     exsm = 1 / L[]
     rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
@@ -1253,4 +1252,13 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     orderflag[] = 2
     return
 end
+
+function fex(du, u, p, t)
+    du[1] = 1e4 * u[2] * u[1] - 0.04e0 * u[1]
+    du[3] = 3e7 * u[2] * u[2]
+    du[2] = - (du[1] + du[2])
+end
+
+prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4E0))
+sol2 = solve(prob, LSODA())
 end  #module
