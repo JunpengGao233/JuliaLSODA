@@ -1062,7 +1062,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
    Hence this section is not executed by *istate = 3.
 */
 		sqrteta = sqrt(ETA);
-		meth = 1;
+		meth = 2;
 		g_nyh = nyh = n;
 		g_lenyh = lenyh = 1 + max(mxordn, mxords);
 
@@ -1715,8 +1715,9 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-
+			printf("h = %f\n",h );
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
+			printf("corflag = %d", corflag);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -2315,7 +2316,8 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    If indicated, the matrix P = I - h * el[1] * J is reevaluated and
    preprocessed before starting the corrector iteration.  ipup is set
    to 0 as an indicator that this has been done.
-*/
+*/  
+    printf("savf = %f, %f, %f \n", savf[1],savf[2],savf[3]);
 	while (1) {
 		if (*m == 0) {
 			if (ipup > 0) {
@@ -2343,6 +2345,7 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 				y[i] = savf[i] - acor[i];
 			}
 			*del = vmnorm(n, y, ewt);
+			printf("y = %f, %f, %f", y[1], y[2],y[3]);
 			yp1 = yh[1];
 			for (i = 1; i <= n; i++) {
 				y[i] = yp1[i] + el[1] * savf[i];
@@ -2405,7 +2408,10 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    reduced or mxncf failures have occured, exit with corflag = 2.
 */
 		(*m)++;
+		printf("m = %d \n",*m);
+		printf("delp = %f\n", *delp);
 		if (*m == maxcor || (*m >= 2 && *del > 2. * *delp)) {
+			printf("miter = %d, jcur = %d \n",miter,jcur);
 			if (miter == 0 || jcur == 1) {
 				corfailure(told, rh, ncf, corflag);
 				return;
@@ -2484,7 +2490,7 @@ static void solsy(double *y)
 
 static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 {
-	static int num = 0; fprintf(stderr, "methodswitch: %d\n", ++num);
+	static int num = 0; fprintf(stderr, "methodswitch: %d\n meth = %d \n", ++num, meth);
 	int             lm1, lm1p1, lm2, lm2p1, nqm1, nqm2;
 	double          rh1, rh2, rh1it, exm2, dm2, exm1, dm1, alpha, exsm;
 
@@ -2633,7 +2639,6 @@ static void orderswitch(double *rhup, double dsm, double *pdh, double *rh, int *
 */
 
 {
-	static int num = 0; fprintf(stderr, "%d\n", ++num);
 	int             newq, i;
 	double          exsm, rhdn, rhsm, ddn, exdn, r;
 
@@ -2820,15 +2825,20 @@ int main(void)
 	rtol[0] = 0.0;
 	atol[0] = 0.0;
 	rtol[1] = rtol[3] = 1.0E-4;
-	rtol[2] = 1.0E-8;
+	rtol[2] = 1.0E-4;
 	atol[1] = 1.0E-6;
-	atol[2] = 1.0E-10;
+	atol[2] = 1.0E-6;
 	atol[3] = 1.0E-6;
 	itask = 1;
 	istate = 1;
 	iopt = 0;
 	jt = 2;
-
+    lsoda(fex, neq, y, &t, tout, itol, rtol, atol, itask, &istate, iopt, jt,
+		    iwork1, iwork2, iwork5, iwork6, iwork7, iwork8, iwork9,
+		    rwork1, rwork5, rwork6, rwork7, 0);
+    printf(" at t= %12.4e y= %14.6e %14.6e %14.6e\n", t, y[1], y[2], y[3]);
+	return 0;}
+	/*
 	for (iout = 1; iout <= 12; iout++) {
 		lsoda(fex, neq, y, &t, tout, itol, rtol, atol, itask, &istate, iopt, jt,
 		      iwork1, iwork2, iwork5, iwork6, iwork7, iwork8, iwork9,
@@ -2843,7 +2853,7 @@ int main(void)
 	n_lsoda_terminate();
 
 	return 0;
-}
+}*/
 /*
  The correct answer (up to certain precision):
 
