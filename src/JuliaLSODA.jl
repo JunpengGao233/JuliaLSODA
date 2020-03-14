@@ -48,6 +48,7 @@ count1 = 0
 struct LSODA <: DiffEqBase.AbstractODEAlgorithm
 end
 
+
 function terminate!(istate::Ref{Int})
     # TODO
     if ILLIN[] == 5
@@ -561,9 +562,10 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            NFE[] >= 37 && (DOPRINT[] = true)
+            NFE[] >= 50 && (DOPRINT[] = true)
             DOPRINT[] && println("h = $(round(H[], digits=7)), nfe = $(NFE[]), method = $(METH[])")
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
+            DOPRINT[] && @show y
             if corflag[] == 0
                 break
             end
@@ -611,6 +613,7 @@ function stoda(neq::Int, prob)
                 end
             end
             IALTH[] -= 1
+            DOPRINT[] && println("IALTH = $(IALTH[]),orderflag = $(orderflag[])")
             if IALTH[] == 0
                 rhup = Ref(0.0)
                 if L[] != LMAX[]
@@ -643,6 +646,7 @@ function stoda(neq::Int, prob)
                     break
                 end
             end
+            DOPRINT[] && println(" L= $(L[]), LMAX = $(LMAX[])\n")
             if IALTH[] > 1 || L[] == LMAX[]
                 endstoda()
                 break
@@ -993,7 +997,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         if del[] <= 100 *pnorm *eps()
-            DOPRINT[] && println("11111111111111")
             break
         end
         if m[] != 0 || METH[] != 1
@@ -1011,7 +1014,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 if PDEST[] != 0
                     PDLAST[] = PDEST[]
                 end
-                DOPRINT[] && println("22222222222222")
                 break
             end
         end
@@ -1129,7 +1131,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
         dm1 = vmnorm(N[], YH[][lm1p1,:], EWT[]) / CM1[MXORDN]
         rh1 = 1 / (1.2 * (dm1 ^ exm1) + 0.0000012)
     else
-        @show dsm, NQ[], CM2[NQ[]], CM1[NQ[]]
+        #@show dsm, NQ[], CM2[NQ[]], CM1[NQ[]]
         dm1 = dsm * ((CM2[NQ[]] / CM1[NQ[]]))
         rh1 = 1 / (1.2 * (dm1 ^ exsm) + 0.0000012)
         nqm1 = NQ[]
@@ -1142,7 +1144,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
     end
     rh1 = min(rh1, rh1it)
     rh2 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
-    println("hoooooooooooooooooO!!!!!!!!!!!!!")
+    #println("hoooooooooooooooooO!!!!!!!!!!!!!")
     if (rh1 * RATIO[]) < (5 * rh2)
         return
     end
@@ -1154,7 +1156,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
     end
     rh[] = rh1
     ICOUNT[] = 20
-    println("hiiiiiiiiiiiiiiiiiiiii!!!!!!!!!!!!!")
+    #println("hiiiiiiiiiiiiiiiiiiiii!!!!!!!!!!!!!")
     METH[] = 1
     MITER[] = 0
     PDLAST[] = 0.0
@@ -1231,6 +1233,7 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
             end
         end
     end
+    @show 1111
     if METH[] == 1
         if rh[] * pdh[] * 1.00001 < SM1[newq]
             if KFLAG[] == 0 && rh[] < 1.1
@@ -1244,6 +1247,7 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
             end
         end
     end
+    @show 2222
     if KFLAG[] <= -2
         rh[] = min(rh[], 0.2)
     end
