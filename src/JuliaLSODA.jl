@@ -90,8 +90,8 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
     DOPRINT[] = false
-    mxstp0 = 500
-    #mxstp0 = 5
+    #mxstp0 = 500
+    mxstp0 = 50
     mxhnl0 = 10
     iflag = Ref(0)
     if istate[] < 1 || istate[] > 3
@@ -561,8 +561,8 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            NFE[] >= 5 && (DOPRINT[] = true)
-            DOPRINT[] && @info "h = $(round(H[], digits = 6))"
+            NFE[] >= 37 && (DOPRINT[] = true)
+            DOPRINT[] && println("h = $(round(H[], digits=7)), nfe = $(NFE[]), method = $(METH[])")
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
             if corflag[] == 0
                 break
@@ -774,7 +774,7 @@ function cfode(meth::Int)
         fnq = Float64(nq)
         nqp1 = nq + 1
         pc[nqp1] = 0
-        for i in nq  : -1 : 2
+        for i in nq+1  : -1 : 2
             pc[i] = pc[i - 1] + fnq * pc[i]
         end
         pc[1] *= fnq
@@ -959,7 +959,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 CRATE[] = 0.7
                 if IERPJ[] != 0
                     corfailure(told, rh, ncf, corflag)
-                    DOPRINT[] && @info "corflag afterIERPJ corfailure" corflag
                     return
                 end
             end
@@ -967,7 +966,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 ACOR[][i] = 0.0
             end
         end
-        DOPRINT[] && @info "miter = $(MITER[])"
         if MITER[] == 0
             YP1 = @view YH[][2, :]
             for i in 1:N[]
@@ -975,7 +973,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 y[i] = SAVF[][i] - ACOR[][i]
             end
             del[] = vmnorm(N[], y, EWT[])
-            DOPRINT[] && (print("y = ");show(IOContext(stdout, :compact=>true), y); println())
+            #DOPRINT[] && (print("y = ");show(IOContext(stdout, :compact=>true), y); println())
             YP1 = @view YH[][1, :]
             for i = 1:N[]
                 y[i] = YP1[i] + EL[1] * SAVF[][i]
@@ -994,12 +992,11 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 y[i] = YP1[i] + EL[1] *ACOR[][i]
             end
         end
-        DOPRINT[] && @show del[]
         if del[] <= 100 *pnorm *eps()
+            DOPRINT[] && println("11111111111111")
             break
         end
         if m[] != 0 || METH[] != 1
-            DOPRINT[] && @warn "11111111111111"
             if m[] != 0
                 rm = 1024
                 if del[] <= (1024 * delp[])
@@ -1009,13 +1006,12 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 CRATE[] = max(0.2 * CRATE[], rm)
             end
             dcon = del[] * min(1.0, 1.5 * CRATE[]) / (TESCO[NQ[], 2] * CONIT[])
-            DOPRINT[] && @show del, CRATE[], NQ[], CONIT[], dcon
             if dcon <= 1.0
                 PDEST[] = max(PDEST[], rate / abs(H[] * EL[1]))
                 if PDEST[] != 0
                     PDLAST[] = PDEST[]
                 end
-                DOPRINT[] && @warn "22222222222222"
+                DOPRINT[] && println("22222222222222")
                 break
             end
         end
@@ -1133,6 +1129,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
         dm1 = vmnorm(N[], YH[][lm1p1,:], EWT[]) / CM1[MXORDN]
         rh1 = 1 / (1.2 * (dm1 ^ exm1) + 0.0000012)
     else
+        @show dsm, NQ[], CM2[NQ[]], CM1[NQ[]]
         dm1 = dsm * ((CM2[NQ[]] / CM1[NQ[]]))
         rh1 = 1 / (1.2 * (dm1 ^ exsm) + 0.0000012)
         nqm1 = NQ[]
@@ -1145,16 +1142,19 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
     end
     rh1 = min(rh1, rh1it)
     rh2 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
+    println("hoooooooooooooooooO!!!!!!!!!!!!!")
     if (rh1 * RATIO[]) < (5 * rh2)
         return
     end
     alpha = max(0.001, rh1)
     dm1 *= alpha ^ exm1
+    @show dm1, pnorm
     if dm1 <= 1000 * eps() * pnorm
         return
     end
     rh[] = rh1
     ICOUNT[] = 20
+    println("hiiiiiiiiiiiiiiiiiiiii!!!!!!!!!!!!!")
     METH[] = 1
     MITER[] = 0
     PDLAST[] = 0.0
