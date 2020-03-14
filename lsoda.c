@@ -1460,6 +1460,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
    Then, in any case, check for stop conditions.
 */
 			init = 1;
+			DOPRINT && printf("mused = %d\n", mused);
 			if (meth != mused) {
 				tsw = tn;
 				maxord = mxordn;
@@ -1673,6 +1674,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 	*/
 	if (jstart == -1) {
 		ipup = miter;
+		DOPRINT && printf("=======%d====\n", ipup);
 		lmax = maxord + 1;
 		if (ialth == 1)
 			ialth = 2;
@@ -1718,13 +1720,10 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-			if (nfe >= 50)
+			if (nfe >= 78)
 				DOPRINT = 1;
-			DOPRINT && fprintf(stderr,"nfe = %d\n", nfe );
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
-			//fprintf(stderr, "corflag = %d\n", corflag); //myprint
-			DOPRINT && fprintf(stderr,"y = %f, %f, %f \n",y[1],y[2],y[3]);
-			DOPRINT && fprintf(stderr, "h after correc = %f\n",h);
+			DOPRINT && fprintf(stderr, "h = %f, nfe = %d, method = %d, y = %.12f, %.12f, %.12f\n", h, nfe, meth, y[1],y[2],y[3]);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -1789,7 +1788,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
    No method switch is being made.  Do the usual step/order selection.
 */
 			ialth--;
-			DOPRINT && fprintf(stderr, "ialth = %d, orderflag = %d\n", ialth, orderflag);
+			DOPRINT && fprintf(stderr, "ialth = %d\n", ialth);
 			if (ialth == 0) {
 				rhup = 0.;
 				if (l != lmax) {
@@ -1801,7 +1800,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					rhup = 1. / (1.4 * pow(dup, exup) + 0.0000014);
 				}
 				orderswitch(&rhup, dsm, &pdh, &rh, &orderflag);
-				DOPRINT && fprintf(stderr, "have switched %d",orderflag);
+				DOPRINT && fprintf(stderr, "have switched %d\n",orderflag);
 /*              
    No change in h or nq.
 */
@@ -2223,11 +2222,14 @@ static void prja(int neq, double *y, _lsoda_f f, void *_data)
 			y[j] += r;
 			fac = -hl0 / r;
 			(*f) (tn, y + 1, acor + 1, _data);
-			for (i = 1; i <= n; i++)
+			for (i = 1; i <= n; i++) {
 				wm[i][j] = (acor[i] - savf[i]) * fac;
+				DOPRINT && printf("wm[%d, %d] = %f\n", i, j, wm[i][j]);
+			}
 			y[j] = yj;
 		}
 		nfe += n;
+		printf("hellll=====================\n");
 /*
    Compute norm of Jacobian.
 */
@@ -2327,9 +2329,9 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    preprocessed before starting the corrector iteration.  ipup is set
    to 0 as an indicator that this has been done.
 */
-        //fprintf(stderr, "savf = %f, %f, %f \n", savf[1],savf[2],savf[3]); //myprint
 	while (1) {
 		if (*m == 0) {
+			DOPRINT && printf("ipup = %d\n", ipup);
 			if (ipup > 0) {
 				prja(neq, y, f, _data);
 				ipup = 0;
@@ -2344,7 +2346,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 			for (i = 1; i <= n; i++)
 				acor[i] = 0.;
 		}		/* end if ( *m == 0 )   */
-		//DOPRINT && fprintf(stderr, "miter = %d, jcur = %d\n", miter, jcur); //myprint
 		if (miter == 0) {
 /*
    In case of functional iteration, update y directly from
@@ -2356,7 +2357,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 				y[i] = savf[i] - acor[i];
 			}
 			*del = vmnorm(n, y, ewt);
-			//DOPRINT && fprintf(stderr, "y = %f, %f, %f\n", y[1], y[2], y[3]); //myprint
 			yp1 = yh[1];
 			for (i = 1; i <= n; i++) {
 				y[i] = yp1[i] + el[1] * savf[i];
@@ -2393,7 +2393,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    On convergence, form pdest = local maximum Lipschitz constant
    estimate.  pdlast is the most recent nonzero estimate.
 */
-		//DOPRINT && fprintf(stderr, "del = %f\n", *del); //myprint
 		if (*del <= 100. * pnorm * ETA) {
 			break;}
 		if (*m != 0 || meth != 1) {
@@ -2421,8 +2420,7 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    reduced or mxncf failures have occured, exit with corflag = 2.
 */
 		(*m)++;
-		//fprintf(stderr, "m = %d\n", *m); // myprint
-		//fprintf(stderr, "delp = %f\n", *delp);
+		DOPRINT && printf("m = %d\n", *m);
 		if (*m == maxcor || (*m >= 2 && *del > 2. * *delp)) {
 			if (miter == 0 || jcur == 1) {
 				corfailure(told, rh, ncf, corflag);
@@ -2585,7 +2583,6 @@ static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 		dm1 = vmnorm(n, yh[lm1p1], ewt) / cm1[mxordn];
 		rh1 = 1. / (1.2 * pow(dm1, exm1) + 0.0000012);
 	} else {
-		fprintf(stderr, "dsm = %f, nq = %d, cm2 = %f, cm1 = %f", dsm, nq, cm2[nq], cm1[nq]);
 		dm1 = dsm * (cm2[nq] / cm1[nq]);
 		rh1 = 1. / (1.2 * pow(dm1, exsm) + 0.0000012);
 		nqm1 = nq;
@@ -2597,7 +2594,6 @@ static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 		rh1it = sm1[nqm1] / *pdh;
 	rh1 = min(rh1, rh1it);
 	rh2 = 1. / (1.2 * pow(dsm, exsm) + 0.0000012);
-	fprintf(stdout, "hoooooooooooooooooooooo!!!\n");
 	if ((rh1 * ratio) < (5. * rh2))
 		return;
 	alpha = max(0.001, rh1);
@@ -2609,7 +2605,6 @@ static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 */
 	*rh = rh1;
 	icount = 20;
-	DOPRINT && fprintf(stdout, "hiiiiiiiiiiiiiiiiiiiiiiiii!!!\n");
 	meth = 1;
 	miter = 0;
 	pdlast = 0.;
