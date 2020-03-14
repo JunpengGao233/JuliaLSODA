@@ -22,6 +22,7 @@ const SM1 = [0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.2, 0.15, 0.1, 0.075, 0.05, 0.
 
 @defconsts [CCMAX, EL0, H, HMIN, HMXI, HU, RC, TN,
             TSW, PDNORM,
+            PDEST, PDLAST, RATIO,
             CONIT, CRATE, HOLD, RMAX] Ref(0.0)
 
 @defconsts [G_NYH, G_LENYH,
@@ -31,8 +32,9 @@ const SM1 = [0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.2, 0.15, 0.1, 0.075, 0.05, 0.
             NFE, NJE, NQU,
             IXPR, JTYP, MUSED, MXORDN, MXORDS,
             IALTH, IPUP, LMAX, NSLP,
-            PDEST, PDLAST, RATIO,
             ICOUNT, IRFLAG] Ref(0)
+
+const DOPRINT = Ref(false)
 
 const EL = zeros(13)
 const ELCO = zeros(12, 13)
@@ -87,7 +89,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
+    DOPRINT[] = false
     mxstp0 = 500
+    #mxstp0 = 5
     mxhnl0 = 10
     iflag = Ref(0)
     if istate[] < 1 || istate[] > 3
@@ -557,7 +561,8 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            println("correc before$(H[]) \n")
+            NFE[] >= 5 && (DOPRINT[] = true)
+            DOPRINT[] && @info "h = $(round(H[], digits = 6))"
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
             if corflag[] == 0
                 break
@@ -816,7 +821,7 @@ function resetcoeff()
     end
     RC[] = RC[] * EL[1] / EL0[]
     EL0[] = EL[1]
-    CONIT = 0.5 / (NQ[] + 2)
+    CONIT[] = 0.5 / (NQ[] + 2)
     return
 end
 
@@ -944,7 +949,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     end
     @views prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
-    #@show SAVF[]
     while true
         if m[] == 0
             if IPUP[] > 0
@@ -955,7 +959,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 CRATE[] = 0.7
                 if IERPJ[] != 0
                     corfailure(told, rh, ncf, corflag)
-                    println("corflag afterIERPJ corfailure %d\n",corflag)
+                    DOPRINT[] && @info "corflag afterIERPJ corfailure" corflag
                     return
                 end
             end
@@ -963,6 +967,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 ACOR[][i] = 0.0
             end
         end
+        DOPRINT[] && @info "miter = $(MITER[])"
         if MITER[] == 0
             YP1 = @view YH[][2, :]
             for i in 1:N[]
@@ -970,7 +975,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 y[i] = SAVF[][i] - ACOR[][i]
             end
             del[] = vmnorm(N[], y, EWT[])
-            #@show y
+            DOPRINT[] && (print("y = ");show(IOContext(stdout, :compact=>true), y); println())
             YP1 = @view YH[][1, :]
             for i = 1:N[]
                 y[i] = YP1[i] + EL[1] * SAVF[][i]
@@ -989,10 +994,12 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 y[i] = YP1[i] + EL[1] *ACOR[][i]
             end
         end
+        DOPRINT[] && @show del[]
         if del[] <= 100 *pnorm *eps()
             break
         end
         if m[] != 0 || METH[] != 1
+            DOPRINT[] && @warn "11111111111111"
             if m[] != 0
                 rm = 1024
                 if del[] <= (1024 * delp[])
@@ -1002,20 +1009,18 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 CRATE[] = max(0.2 * CRATE[], rm)
             end
             dcon = del[] * min(1.0, 1.5 * CRATE[]) / (TESCO[NQ[], 2] * CONIT[])
+            DOPRINT[] && @show del, CRATE[], NQ[], CONIT[], dcon
             if dcon <= 1.0
                 PDEST[] = max(PDEST[], rate / abs(H[] * EL[1]))
                 if PDEST[] != 0
                     PDLAST[] = PDEST[]
                 end
+                DOPRINT[] && @warn "22222222222222"
                 break
             end
         end
         m[] += 1
-        #@show m[]
-        #@show delp[]
         if m[] == MAXCOR[] || (m[] >= 2 && del[] > 2 * delp[])
-            #@show JCUR[]
-            #@show MITER[]
             if MITER[] == 0 || JCUR[] == 1
                 corfailure(told, rh, ncf, corflag)
                 return

@@ -51,6 +51,8 @@ typedef void    (*_lsoda_f) (double, double *, double *, void *);
 
 #include <math.h>
 
+int DOPRINT = 0;
+
 static int 
 idamax(n, dx, incx)
 	double         *dx;
@@ -877,7 +879,8 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 
 
 {
-	int             mxstp0 = 500, mxhnl0 = 10;
+	//int             mxstp0 = 500, mxhnl0 = 10;
+	int             mxstp0 = 50, mxhnl0 = 10;
 
 	int             i, iflag, lenyh, ihit;
 	double          atoli, ayi, big, h0, hmax, hmx, rh, rtoli, tcrit, tdist, tnext, tol,
@@ -1715,9 +1718,11 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-			printf("h = %f\n",h );
+			if (nfe >= 5)
+				DOPRINT = 1;
+			DOPRINT && fprintf(stderr, "h = %f, nfe = %d\n",h,nfe); //myprint
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
-			printf("corflag = %d", corflag);
+			//fprintf(stderr, "corflag = %d\n", corflag); //myprint
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -2316,8 +2321,8 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    If indicated, the matrix P = I - h * el[1] * J is reevaluated and
    preprocessed before starting the corrector iteration.  ipup is set
    to 0 as an indicator that this has been done.
-*/  
-    printf("savf = %f, %f, %f \n", savf[1],savf[2],savf[3]);
+*/
+        //fprintf(stderr, "savf = %f, %f, %f \n", savf[1],savf[2],savf[3]); //myprint
 	while (1) {
 		if (*m == 0) {
 			if (ipup > 0) {
@@ -2334,6 +2339,7 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 			for (i = 1; i <= n; i++)
 				acor[i] = 0.;
 		}		/* end if ( *m == 0 )   */
+		DOPRINT && fprintf(stderr, "miter = %d, jcur = %d\n", miter, jcur); //myprint
 		if (miter == 0) {
 /*
    In case of functional iteration, update y directly from
@@ -2345,7 +2351,7 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 				y[i] = savf[i] - acor[i];
 			}
 			*del = vmnorm(n, y, ewt);
-			printf("y = %f, %f, %f", y[1], y[2],y[3]);
+			DOPRINT && fprintf(stderr, "y = %f, %f, %f\n", y[1], y[2], y[3]); //myprint
 			yp1 = yh[1];
 			for (i = 1; i <= n; i++) {
 				y[i] = yp1[i] + el[1] * savf[i];
@@ -2382,8 +2388,10 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    On convergence, form pdest = local maximum Lipschitz constant
    estimate.  pdlast is the most recent nonzero estimate.
 */
-		if (*del <= 100. * pnorm * ETA)
-			break;
+		DOPRINT && fprintf(stderr, "del = %f\n", *del); //myprint
+		if (*del <= 100. * pnorm * ETA) {
+			fprintf(stderr, "hfijoajfsjdfra;ljfi!!!!!");
+			break;}
 		if (*m != 0 || meth != 1) {
 			if (*m != 0) {
 				rm = 1024.0;
@@ -2393,10 +2401,12 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 				crate = max(0.2 * crate, rm);
 			}
 			dcon = *del * min(1., 1.5 * crate) / (tesco[nq][2] * conit);
+			DOPRINT && fprintf(stderr, "dcon = %f, crate = %f, nq = %d, conit = %f\n", dcon, crate, nq, conit);
 			if (dcon <= 1.) {
 				pdest = max(pdest, rate / fabs(h * el[1]));
 				if (pdest != 0.)
 					pdlast = pdest;
+				DOPRINT && fprintf(stderr, "break222222222222222!\n");
 				break;
 			}
 		}
@@ -2408,12 +2418,12 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    reduced or mxncf failures have occured, exit with corflag = 2.
 */
 		(*m)++;
-		printf("m = %d \n",*m);
-		printf("delp = %f\n", *delp);
+		//fprintf(stderr, "m = %d\n", *m); // myprint
+		//fprintf(stderr, "delp = %f\n", *delp);
 		if (*m == maxcor || (*m >= 2 && *del > 2. * *delp)) {
-			printf("miter = %d, jcur = %d \n",miter,jcur);
 			if (miter == 0 || jcur == 1) {
 				corfailure(told, rh, ncf, corflag);
+				DOPRINT && fprintf(stderr, "break3333333333333!\n");
 				return;
 			}
 			ipup = miter;
@@ -2490,7 +2500,6 @@ static void solsy(double *y)
 
 static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 {
-	static int num = 0; fprintf(stderr, "methodswitch: %d\n meth = %d \n", ++num, meth);
 	int             lm1, lm1p1, lm2, lm2p1, nqm1, nqm2;
 	double          rh1, rh2, rh1it, exm2, dm2, exm1, dm1, alpha, exsm;
 
