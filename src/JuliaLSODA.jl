@@ -946,6 +946,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     end
     @views prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
+    @show SAVF[]
     while true
         if m[] == 0
             if IPUP[] > 0
@@ -1253,12 +1254,5 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     return
 end
 
-function fex(du, u, p, t)
-    du[1] = 1e4 * u[2] * u[1] - 0.04e0 * u[1]
-    du[3] = 3e7 * u[2] * u[2]
-    du[2] = - (du[1] + du[2])
-end
 
-prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4E0))
-sol2 = solve(prob, LSODA())
 end  #module
