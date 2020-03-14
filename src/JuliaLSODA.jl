@@ -87,7 +87,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
-    mxstp0 = 5
+    mxstp0 = 500
     mxhnl0 = 10
     iflag = Ref(0)
     if istate[] < 1 || istate[] > 3
@@ -559,9 +559,7 @@ function stoda(neq::Int, prob)
             #Ref??? y
             println("correc before$(H[]) \n")
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
-            @show corflag[]
             if corflag[] == 0
-                @show H[]
                 break
             end
             if corflag[] == 1
@@ -946,7 +944,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     end
     @views prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
-    @show SAVF[]
+    #@show SAVF[]
     while true
         if m[] == 0
             if IPUP[] > 0
@@ -972,7 +970,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 y[i] = SAVF[][i] - ACOR[][i]
             end
             del[] = vmnorm(N[], y, EWT[])
-            @show y
+            #@show y
             YP1 = @view YH[][1, :]
             for i = 1:N[]
                 y[i] = YP1[i] + EL[1] * SAVF[][i]
@@ -1013,11 +1011,11 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         m[] += 1
-        @show m[]
-        @show delp[]
+        #@show m[]
+        #@show delp[]
         if m[] == MAXCOR[] || (m[] >= 2 && del[] > 2 * delp[])
-            @show JCUR[]
-            @show MITER[]
+            #@show JCUR[]
+            #@show MITER[]
             if MITER[] == 0 || JCUR[] == 1
                 corfailure(told, rh, ncf, corflag)
                 return
@@ -1254,5 +1252,12 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     return
 end
 
+function fex(du, u, p, t)
+    du[1] = 1e4 * u[2] * u[3] - 0.04e0 * u[1]
+    du[3] = 3e7 * u[2] * u[2]
+    du[2] = - (du[1] + du[3])
+end
 
+prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4E0))
+sol2 = solve(prob, LSODA())
 end  #module
