@@ -1,15 +1,18 @@
 using JuliaLSODA, Test
 
-function fex(du, u, p, t)
-    du[1] = 1e4 * u[2] * u[3] - 0.04e0 * u[1]
-    du[3] = 3e7 * u[2] * u[2]
-    du[2] = - (du[1] + du[3])
+@testset "LSODA Example" begin
+    function fex(du, u, p, t)
+        du[1] = 1e4 * u[2] * u[3] - 0.04e0 * u[1]
+        du[3] = 3e7 * u[2] * u[2]
+        du[2] = - (du[1] + du[3])
+    end
+
+    prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4e0))
+    sol2 = solve(prob, LSODA())
+    reference = [9.8517230200179651e-01, 3.3863992446169744e-05, 1.4793834005757239e-02]
+    @test prob.u0 ≈ reference rtol = 1e-15
 end
 
-prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4E0))
-sol2 = solve(prob, LSODA())
-
-#=
 @testset "Rober" begin
     function rober(du,u,p,t)
       y₁,y₂,y₃ = u
@@ -53,4 +56,3 @@ end
     prob = ODEProblem(pendulum!,u₀,tspan,M)
     sol = solve(prob, LSODA())
 end
-=#

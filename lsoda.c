@@ -1717,10 +1717,10 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-			if (nfe >= 80)
-				DOPRINT = 1;
+			//if (nfe >= 80)
+			//	DOPRINT = 1;
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
-			DOPRINT && fprintf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", tn, del, nfe, meth, y[1]);
+			//DOPRINT && fprintf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", tn, del, nfe, meth, y[1]);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -2369,7 +2369,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 			}
 			solsy(y);
 			*del = vmnorm(n, y, ewt);
-			DOPRINT && printf("del2 = %f\n", *del);
 			yp1 = yh[1];
 			for (i = 1; i <= n; i++) {
 				acor[i] += y[i];
@@ -2839,7 +2838,7 @@ int main(void)
     lsoda(fex, neq, y, &t, tout, itol, rtol, atol, itask, &istate, iopt, jt,
 		    iwork1, iwork2, iwork5, iwork6, iwork7, iwork8, iwork9,
 		    rwork1, rwork5, rwork6, rwork7, 0);
-    printf(" at t= %12.4e y= %14.6e %14.6e %14.6e\n", t, y[1], y[2], y[3]);
+    printf(" at t= %12.4e y= %14.16e %14.16e %14.16e\n", t, y[1], y[2], y[3]);
 	return 0;}
 	/*
 	for (iout = 1; iout <= 12; iout++) {

@@ -566,9 +566,9 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            NFE[] >= 80 && (DOPRINT[] = true)
+            #NFE[] >= 80 && (DOPRINT[] = true)
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
-            DOPRINT[] && @printf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", TN[], del[], NFE[], METH[], y[1]);
+            #DOPRINT[] && @printf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", TN[], del[], NFE[], METH[], y[1]);
             if corflag[] == 0
                 break
             end
@@ -988,7 +988,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
             y[:] = solsy(y)
             del[] = vmnorm(N[], y, EWT[])
-            DOPRINT[] && @printf("del2 = %f\n", del[]);
             YP1 = @view YH[][1, :]
             for i in 1:N[]
                 ACOR[][i] += y[i]
