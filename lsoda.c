@@ -879,8 +879,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 
 
 {
-	//int             mxstp0 = 500, mxhnl0 = 10;
-	int             mxstp0 = 50, mxhnl0 = 10;
+	int             mxstp0 = 500, mxhnl0 = 10;
 
 	int             i, iflag, lenyh, ihit;
 	double          atoli, ayi, big, h0, hmax, hmx, rh, rtoli, tcrit, tdist, tnext, tol,
@@ -1460,7 +1459,6 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
    Then, in any case, check for stop conditions.
 */
 			init = 1;
-			//DOPRINT && printf("mused = %d\n", mused);
 			if (meth != mused) {
 				tsw = tn;
 				maxord = mxordn;
@@ -1674,7 +1672,6 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 	*/
 	if (jstart == -1) {
 		ipup = miter;
-		//DOPRINT && printf("=======%d====\n", ipup);
 		lmax = maxord + 1;
 		if (ialth == 1)
 			ialth = 2;
@@ -1720,10 +1717,10 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-			if (nfe >= 83)
+			if (nfe >= 80)
 				DOPRINT = 1;
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
-			DOPRINT && fprintf(stderr, "tn = %f, h = %f, nfe = %d, method = %d, y = %.12f, %.12f, %.12f\n", tn, h, nfe, meth, y[1],y[2],y[3]);
+			DOPRINT && fprintf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", tn, del, nfe, meth, y[1]);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -1788,7 +1785,6 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
    No method switch is being made.  Do the usual step/order selection.
 */
 			ialth--;
-			//DOPRINT && fprintf(stderr, "ialth = %d\n", ialth);
 			if (ialth == 0) {
 				rhup = 0.;
 				if (l != lmax) {
@@ -1800,8 +1796,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					rhup = 1. / (1.4 * pow(dup, exup) + 0.0000014);
 				}
 				orderswitch(&rhup, dsm, &pdh, &rh, &orderflag);
-				//DOPRINT && fprintf(stderr, "have switched %d\n",orderflag);
-/*              
+/*
    No change in h or nq.
 */
 				if (orderflag == 0) {
@@ -2224,7 +2219,6 @@ static void prja(int neq, double *y, _lsoda_f f, void *_data)
 			(*f) (tn, y + 1, acor + 1, _data);
 			for (i = 1; i <= n; i++) {
 				wm[i][j] = (acor[i] - savf[i]) * fac;
-				//DOPRINT && printf("wm[%d, %d] = %f\n", i, j, wm[i][j]);
 			}
 			y[j] = yj;
 		}
@@ -2263,8 +2257,9 @@ static double vmnorm(int n, double *v, double *w)
 	double          vm;
 
 	vm = 0.;
-	for (i = 1; i <= n; i++)
+	for (i = 1; i <= n; i++) {
 		vm = max(vm, fabs(v[i]) * w[i]);
+	}
 	return vm;
 
 }
@@ -2330,7 +2325,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 */
 	while (1) {
 		if (*m == 0) {
-			//DOPRINT && printf("ipup = %d\n", ipup);
 			if (ipup > 0) {
 				prja(neq, y, f, _data);
 				ipup = 0;
@@ -2370,10 +2364,12 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 		 */ 
 		else {
 			yp1 = yh[2];
-			for (i = 1; i <= n; i++)
+			for (i = 1; i <= n; i++) {
 				y[i] = h * savf[i] - (yp1[i] + acor[i]);
+			}
 			solsy(y);
 			*del = vmnorm(n, y, ewt);
+			DOPRINT && printf("del2 = %f\n", *del);
 			yp1 = yh[1];
 			for (i = 1; i <= n; i++) {
 				acor[i] += y[i];
@@ -2403,7 +2399,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 				crate = max(0.2 * crate, rm);
 			}
 			dcon = *del * min(1., 1.5 * crate) / (tesco[nq][2] * conit);
-			//DOPRINT && fprintf(stderr, "dcon = %f, crate = %f, nq = %d, conit = %f\n", dcon, crate, nq, conit);
 			if (dcon <= 1.) {
 				pdest = max(pdest, rate / fabs(h * el[1]));
 				if (pdest != 0.)

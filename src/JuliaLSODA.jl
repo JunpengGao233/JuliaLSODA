@@ -38,6 +38,7 @@ const SM1 = [0.5, 0.575, 0.55, 0.45, 0.35, 0.25, 0.2, 0.15, 0.1, 0.075, 0.05, 0.
 
 const DOPRINT = Ref(false)
 
+const LUresult = Ref{LU{Float64,Array{Float64,2}}}()
 const EL = zeros(13)
 const ELCO = zeros(12, 13)
 const TESCO = zeros(12, 3)
@@ -95,8 +96,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
     DOPRINT[] = false
     PDNORM[] = 0
     JTYP[] = 2
-    #mxstp0 = 500
-    mxstp0 = 50
+    mxstp0 = 500
     mxhnl0 = 10
     iflag = Ref(0)
     if istate[] < 1 || istate[] > 3
@@ -386,7 +386,6 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         #Block f#
         if KFLAG[] == 0
             INIT[] = 1
-            #DOPRINT[] && @show MUSED[]
             if METH[] != MUSED[]
                 TSW[] = TN[]
                 MAXORD[] = MXORDN[]
@@ -394,7 +393,6 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                     MAXORD[] = MXORDS[]
                 end
                 JSTART[] = -1
-                #DOPRINT[] && println("hiiiiiiiiiiiiiiiiiii")
                 if Bool(IXPR[])
                     METH[] == 2 && @warn("[lsoda] a switch to the stiff method has occurred")
                     METH[] == 1 && @warn("[lsoda] a switch to the nonstiff method has occurred")
@@ -524,7 +522,6 @@ function stoda(neq::Int, prob)
         resetcoeff()
     end
     if JSTART[] == -1
-        #DOPRINT[] && println("=================== MITER = $(MITER[])=====")
         IPUP[] = MITER[]
         LMAX[] = MAXORD[] + 1
         if IALTH[] == 1
@@ -569,11 +566,9 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            NFE[] >= 83 && (DOPRINT[] = true)
+            NFE[] >= 80 && (DOPRINT[] = true)
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
-            #DOPRINT[] && println("h = $(round(H[], digits=7)), nfe = $(NFE[]), method = $(METH[]), y = $(y[1]), $(y[2]), $(y[3]))")
-
-            DOPRINT[] && @printf(stderr, "tn = %f, h = %f, nfe = %d, method = %d, y = %.12f, %.12f, %.12f\n", TN[], H[], NFE[], METH[], y[1],y[2],y[3]);
+            DOPRINT[] && @printf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", TN[], del[], NFE[], METH[], y[1]);
             if corflag[] == 0
                 break
             end
@@ -621,7 +616,6 @@ function stoda(neq::Int, prob)
                 end
             end
             IALTH[] -= 1
-            #DOPRINT[] && println("IALTH = $(IALTH[])")
             if IALTH[] == 0
                 rhup = Ref(0.0)
                 if L[] != LMAX[]
@@ -634,7 +628,6 @@ function stoda(neq::Int, prob)
                     rhup[] = 1 / (1.4 * dup ^ exup +0.0000014)
                 end
                 orderswitch(rhup, dsm, pdh, rh, orderflag)
-                #DOPRINT[] && println("orderflag = $(orderflag[])")
                 if orderflag[] == 0
                     endstoda()
                     break
@@ -904,7 +897,6 @@ function prja(neq::Int, prob)
         @warn("[prja] miter != 2\n")
         return
     end
-    #DOPRINT[] && @show MITER[]
     if MITER[] == 2
         fac = vmnorm(N[], SAVF[], EWT[])
         r0 = 1000 * abs(H[]) * eps() * N[] *fac
@@ -919,21 +911,16 @@ function prja(neq::Int, prob)
             @views prob.f(ACOR[], y, prob.p, TN[])
             for i in 1:N[]
                 WM[][i, j] = (ACOR[][i] - SAVF[][i]) * fac
-                #DOPRINT[] && @show WM[][i, j]
             end
             y[j] = yj
         end
         NFE[] += N[]
-        #DOPRINT[] && println("=========== hiiiiiii ===========")
         PDNORM[] = fnorm(N[], WM[], EWT[]) / abs(hl0)
         for i in 1:N[]
             WM[][i, i] += 1.0
         end
-        LUresult = lu!(WM[])
-        WM[] = LUresult.L
-        if 0 in diag(LUresult.U)
-            IERPJ[] = 1
-        end
+        LUresult[] = lu!(WM[])
+        issuccess(LUresult[]) || (IERPJ[] = 1)
         return
     end
 end
@@ -966,7 +953,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     @views prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
     while true
-        #DOPRINT[] && @show m[], IPUP[]
         if m[] == 0
             if IPUP[] > 0
                 prja(neq, prob)
@@ -1002,6 +988,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
             y[:] = solsy(y)
             del[] = vmnorm(N[], y, EWT[])
+            DOPRINT[] && @printf("del2 = %f\n", del[]);
             YP1 = @view YH[][1, :]
             for i in 1:N[]
                 ACOR[][i] += y[i]
@@ -1030,7 +1017,6 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         m[] += 1
-        #DOPRINT[] && println("m = $(m[])")
         if m[] == MAXCOR[] || (m[] >= 2 && del[] > 2 * delp[])
             if MITER[] == 0 || JCUR[] == 1
                 corfailure(told, rh, ncf, corflag)
@@ -1084,7 +1070,7 @@ function solsy(y::Vector{Float64})
         return
     end
     if MITER[] == 2
-        return WM[] \ y
+        return ldiv!(LUresult[], y)
     end
 end
 
@@ -1163,7 +1149,6 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
     alpha = max(0.001, rh1)
     dm1 *= alpha ^ exm1
     if dm1 <= 1000 * eps() * pnorm
-        DOPRINT[] && @printf("2222222222\n")
         return
     end
     rh[] = rh1
