@@ -51,7 +51,9 @@ typedef void    (*_lsoda_f) (double, double *, double *, void *);
 
 #include <math.h>
 
-static int
+int DOPRINT = 0;
+
+static int 
 idamax(n, dx, incx)
 	double         *dx;
 	int             n, incx;
@@ -120,7 +122,7 @@ idamax(n, dx, incx)
  * dscal.c *
  ***********/
 
-void
+void 
 dscal(n, da, dx, incx)
 	double          da, *dx;
 	int             n, incx;
@@ -187,7 +189,7 @@ dscal(n, da, dx, incx)
  * ddot.c *
  **********/
 
-static double
+static double 
 ddot(n, dx, incx, dy, incy)
 	double         *dx, *dy;
 	int             n, incx, incy;
@@ -279,7 +281,7 @@ From: tam@dragonfly.wri.com
 To: whitbeck@sanjuan.wrc.unr.edu
 */
 
-static void
+static void 
 daxpy(n, da, dx, incx, dy, incy)
 	double          da, *dx, *dy;
 	int             n, incx, incy;
@@ -366,7 +368,7 @@ daxpy(n, da, dx, incx, dy, incy)
  * dgesl.c *
  ***********/
 
-static void
+static void 
 dgesl(a, n, ipvt, b, job)
 	double        **a, *b;
 	int             n, *ipvt, job;
@@ -467,7 +469,7 @@ dgesl(a, n, ipvt, b, job)
  * dgefa.c *
  ***********/
 
-void
+void 
 dgefa(a, n, ipvt, info)
 	double        **a;
 	int             n, *ipvt, *info;
@@ -845,7 +847,7 @@ void lsoda(_lsoda_f f, int neq, double *y, double *t, double tout, int itol, dou
 		   int iwork1, int iwork2, int iwork5, int iwork6, int iwork7, int iwork8, int iwork9,
 		   double rwork1, double rwork5, double rwork6, double rwork7, void *_data)
 /*
-void
+void 
 lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
       iopt, jt, iwork1, iwork2, iwork5, iwork6, iwork7, iwork8,
       iwork9, rwork1, rwork5, rwork6, rwork7, _data)
@@ -988,7 +990,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 			}
 		}
 		/* end if ( iopt == 0 )   */
-		 /* Optional inputs.   */
+		 /* Optional inputs.   */ 
 		else {		/* if ( iopt = 1 )  */
 			ixpr = iwork5;
 			if (ixpr < 0 || ixpr > 1) {
@@ -1053,7 +1055,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 	}			/* end if ( *istate == 1 || *istate == 3 )   */
 	/*
 	   If *istate = 1, meth is initialized to 1.
-
+	
 	   Also allocate memory for yh, wm, ewt, savf, acor, ipvt.
 	*/
 	if (*istate == 1) {
@@ -1062,7 +1064,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
    Hence this section is not executed by *istate = 3.
 */
 		sqrteta = sqrt(ETA);
-		meth = 1;
+		meth = 2;
 		g_nyh = nyh = n;
 		g_lenyh = lenyh = 1 + max(mxordn, mxords);
 
@@ -1377,9 +1379,9 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
 	   Block e.
 	   The next block is normally executed for all calls and contains
 	   the call to the one-step core integrator stoda.
-
+	
 	   This is a looping point for the integration steps.
-
+	
 	   First check for too many steps being taken, update ewt ( if not at
 	   start of problem).  Check for too much accuracy being requested, and
 	   check for h below the roundoff level in *t.
@@ -1715,8 +1717,10 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-
+			//if (nfe >= 80)
+			//	DOPRINT = 1;
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
+			//DOPRINT && fprintf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", tn, del, nfe, meth, y[1]);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -1799,7 +1803,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					endstoda();
 					break;
 				}
-/*
+/*              
    h is changed, but not nq.
 */
 				if (orderflag == 1) {
@@ -1820,7 +1824,8 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					endstoda();
 					break;
 				}
-			}	/* end if ( ialth == 0 )   */
+			}
+				/* end if ( ialth == 0 )   */
 			if (ialth > 1 || l == lmax) {
 				endstoda();
 				break;
@@ -1838,7 +1843,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 		   to try the step again.  Compute the optimum step size for this or
 		   one lower.  After 2 or more failures, h is forced to decrease
 		   by a factor of 0.2 or less.
-		 */
+		 */ 
 		else {
 			kflag--;
 			tn = told;
@@ -1881,7 +1886,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 			   derivative is recomputed, and the order is set to 1.  Then
 			   h is reduced by a factor of 10, and the step is retried,
 			   until it succeeds or h reaches hmin.
-			 */
+			 */ 
 			else {
 				if (kflag == -10) {
 					kflag = -1;
@@ -2212,8 +2217,9 @@ static void prja(int neq, double *y, _lsoda_f f, void *_data)
 			y[j] += r;
 			fac = -hl0 / r;
 			(*f) (tn, y + 1, acor + 1, _data);
-			for (i = 1; i <= n; i++)
+			for (i = 1; i <= n; i++) {
 				wm[i][j] = (acor[i] - savf[i]) * fac;
+			}
 			y[j] = yj;
 		}
 		nfe += n;
@@ -2251,8 +2257,9 @@ static double vmnorm(int n, double *v, double *w)
 	double          vm;
 
 	vm = 0.;
-	for (i = 1; i <= n; i++)
+	for (i = 1; i <= n; i++) {
 		vm = max(vm, fabs(v[i]) * w[i]);
+	}
 	return vm;
 
 }
@@ -2354,11 +2361,12 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 		   In the case of the chord method, compute the corrector error,
 		   and solve the linear system with that as right-hand side and
 		   P as coefficient matrix.
-		 */
+		 */ 
 		else {
 			yp1 = yh[2];
-			for (i = 1; i <= n; i++)
+			for (i = 1; i <= n; i++) {
 				y[i] = h * savf[i] - (yp1[i] + acor[i]);
+			}
 			solsy(y);
 			*del = vmnorm(n, y, ewt);
 			yp1 = yh[1];
@@ -2379,8 +2387,8 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    On convergence, form pdest = local maximum Lipschitz constant
    estimate.  pdlast is the most recent nonzero estimate.
 */
-		if (*del <= 100. * pnorm * ETA)
-			break;
+		if (*del <= 100. * pnorm * ETA) {
+			break;}
 		if (*m != 0 || meth != 1) {
 			if (*m != 0) {
 				rm = 1024.0;
@@ -2578,8 +2586,9 @@ static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 		rh1it = sm1[nqm1] / *pdh;
 	rh1 = min(rh1, rh1it);
 	rh2 = 1. / (1.2 * pow(dsm, exsm) + 0.0000012);
-	if ((rh1 * ratio) < (5. * rh2))
+	if ((rh1 * ratio) < (5. * rh2)) {
 		return;
+        }
 	alpha = max(0.001, rh1);
 	dm1 *= pow(alpha, exm1);
 	if (dm1 <= 1000. * ETA * pnorm)
@@ -2817,15 +2826,20 @@ int main(void)
 	rtol[0] = 0.0;
 	atol[0] = 0.0;
 	rtol[1] = rtol[3] = 1.0E-4;
-	rtol[2] = 1.0E-8;
+	rtol[2] = 1.0E-4;
 	atol[1] = 1.0E-6;
-	atol[2] = 1.0E-10;
+	atol[2] = 1.0E-6;
 	atol[3] = 1.0E-6;
 	itask = 1;
 	istate = 1;
 	iopt = 0;
 	jt = 2;
-
+    lsoda(fex, neq, y, &t, tout, itol, rtol, atol, itask, &istate, iopt, jt,
+		    iwork1, iwork2, iwork5, iwork6, iwork7, iwork8, iwork9,
+		    rwork1, rwork5, rwork6, rwork7, 0);
+    printf(" at t= %12.4e y= %14.16e %14.16e %14.16e\n", t, y[1], y[2], y[3]);
+	return 0;}
+	/*
 	for (iout = 1; iout <= 12; iout++) {
 		lsoda(fex, neq, y, &t, tout, itol, rtol, atol, itask, &istate, iopt, jt,
 		      iwork1, iwork2, iwork5, iwork6, iwork7, iwork8, iwork9,
@@ -2841,7 +2855,7 @@ int main(void)
 	n_lsoda_terminate();
 
 	return 0;
-}
+}*/
 /*
  The correct answer (up to certain precision):
  at t=   4.0000e-01 y=   9.851712e-01   3.386380e-05   1.479493e-02
@@ -2874,4 +2888,3 @@ int main(void)
  at t=   4.0000e+09 y=   4.658667e-07   1.863468e-12   9.999995e-01
  at t=   4.0000e+10 y=   1.431100e-08   5.724404e-14   1.000000e+00
  */
-
