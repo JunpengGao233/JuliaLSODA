@@ -1460,7 +1460,7 @@ lsoda(f, neq, y, t, tout, itol, rtol, atol, itask, istate,
    Then, in any case, check for stop conditions.
 */
 			init = 1;
-			DOPRINT && printf("mused = %d\n", mused);
+			//DOPRINT && printf("mused = %d\n", mused);
 			if (meth != mused) {
 				tsw = tn;
 				maxord = mxordn;
@@ -1674,7 +1674,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 	*/
 	if (jstart == -1) {
 		ipup = miter;
-		DOPRINT && printf("=======%d====\n", ipup);
+		//DOPRINT && printf("=======%d====\n", ipup);
 		lmax = maxord + 1;
 		if (ialth == 1)
 			ialth = 2;
@@ -1720,10 +1720,10 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 						yp1[i] += yp2[i];
 				}
 			pnorm = vmnorm(n, yh[1], ewt);
-			if (nfe >= 78)
+			if (nfe >= 83)
 				DOPRINT = 1;
 			correction(neq, y, f, &corflag, pnorm, &del, &delp, &told, &ncf, &rh, &m, _data);
-			DOPRINT && fprintf(stderr, "h = %f, nfe = %d, method = %d, y = %.12f, %.12f, %.12f\n", h, nfe, meth, y[1],y[2],y[3]);
+			DOPRINT && fprintf(stderr, "tn = %f, h = %f, nfe = %d, method = %d, y = %.12f, %.12f, %.12f\n", tn, h, nfe, meth, y[1],y[2],y[3]);
 			if (corflag == 0)
 				break;
 			if (corflag == 1) {
@@ -1788,7 +1788,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
    No method switch is being made.  Do the usual step/order selection.
 */
 			ialth--;
-			DOPRINT && fprintf(stderr, "ialth = %d\n", ialth);
+			//DOPRINT && fprintf(stderr, "ialth = %d\n", ialth);
 			if (ialth == 0) {
 				rhup = 0.;
 				if (l != lmax) {
@@ -1800,7 +1800,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 					rhup = 1. / (1.4 * pow(dup, exup) + 0.0000014);
 				}
 				orderswitch(&rhup, dsm, &pdh, &rh, &orderflag);
-				DOPRINT && fprintf(stderr, "have switched %d\n",orderflag);
+				//DOPRINT && fprintf(stderr, "have switched %d\n",orderflag);
 /*              
    No change in h or nq.
 */
@@ -2224,12 +2224,11 @@ static void prja(int neq, double *y, _lsoda_f f, void *_data)
 			(*f) (tn, y + 1, acor + 1, _data);
 			for (i = 1; i <= n; i++) {
 				wm[i][j] = (acor[i] - savf[i]) * fac;
-				DOPRINT && printf("wm[%d, %d] = %f\n", i, j, wm[i][j]);
+				//DOPRINT && printf("wm[%d, %d] = %f\n", i, j, wm[i][j]);
 			}
 			y[j] = yj;
 		}
 		nfe += n;
-		printf("hellll=====================\n");
 /*
    Compute norm of Jacobian.
 */
@@ -2331,7 +2330,7 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
 */
 	while (1) {
 		if (*m == 0) {
-			DOPRINT && printf("ipup = %d\n", ipup);
+			//DOPRINT && printf("ipup = %d\n", ipup);
 			if (ipup > 0) {
 				prja(neq, y, f, _data);
 				ipup = 0;
@@ -2420,7 +2419,6 @@ static void correction(int neq, double *y, _lsoda_f f, int *corflag, double pnor
    reduced or mxncf failures have occured, exit with corflag = 2.
 */
 		(*m)++;
-		DOPRINT && printf("m = %d\n", *m);
 		if (*m == maxcor || (*m >= 2 && *del > 2. * *delp)) {
 			if (miter == 0 || jcur == 1) {
 				corfailure(told, rh, ncf, corflag);
@@ -2594,8 +2592,9 @@ static void methodswitch(double dsm, double pnorm, double *pdh, double *rh)
 		rh1it = sm1[nqm1] / *pdh;
 	rh1 = min(rh1, rh1it);
 	rh2 = 1. / (1.2 * pow(dsm, exsm) + 0.0000012);
-	if ((rh1 * ratio) < (5. * rh2))
+	if ((rh1 * ratio) < (5. * rh2)) {
 		return;
+        }
 	alpha = max(0.001, rh1);
 	dm1 *= pow(alpha, exm1);
 	if (dm1 <= 1000. * ETA * pnorm)

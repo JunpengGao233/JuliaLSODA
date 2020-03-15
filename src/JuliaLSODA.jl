@@ -5,6 +5,8 @@ using LinearAlgebra
 using Reexport: @reexport
 @reexport using DiffEqBase
 
+using Printf
+
 export LSODA
 
 macro defconsts(expr, var)
@@ -91,6 +93,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
     DOPRINT[] = false
+    PDNORM[] = 0
     JTYP[] = 2
     #mxstp0 = 500
     mxstp0 = 50
@@ -120,12 +123,12 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
     y = prob.u0
     N[] = neq
     if istate[] == 1
-		INIT[] = 0
-		if tout == t[]
-			NTREP[] += 1
-			NTREP[] < 5 && return
-			@warn("[lsoda] repeated calls with istate = 1 and tout = t. run aborted.. apparent infinite loop\n")
-			return
+        INIT[] = 0
+        if tout == t[]
+            NTREP[] += 1
+            NTREP[] < 5 && return
+            @warn("[lsoda] repeated calls with istate = 1 and tout = t. run aborted.. apparent infinite loop\n")
+            return
         end
     end
     ###Block b ###
@@ -146,13 +149,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 
     if iopt == false
         IXPR[] = 0
-		MXSTEP[] = mxstp0
-		MXHNIL[] = mxhnl0
-		HMXI[] = 0.0
-		HMIN[] = 0.0
-		if (istate[] == 1)
+        MXSTEP[] = mxstp0
+        MXHNIL[] = mxhnl0
+        HMXI[] = 0.0
+        HMIN[] = 0.0
+        if (istate[] == 1)
             h0 = 0.0
-			MXORDN[] = MORD[1]
+            MXORDN[] = MORD[1]
             MXORDS[] = MORD[2]
         end
     #TODO iopt == true
@@ -383,7 +386,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         #Block f#
         if KFLAG[] == 0
             INIT[] = 1
-            DOPRINT[] && @show MUSED[]
+            #DOPRINT[] && @show MUSED[]
             if METH[] != MUSED[]
                 TSW[] = TN[]
                 MAXORD[] = MXORDN[]
@@ -391,7 +394,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                     MAXORD[] = MXORDS[]
                 end
                 JSTART[] = -1
-                DOPRINT[] && println("hiiiiiiiiiiiiiiiiiii")
+                #DOPRINT[] && println("hiiiiiiiiiiiiiiiiiii")
                 if Bool(IXPR[])
                     METH[] == 2 && @warn("[lsoda] a switch to the stiff method has occurred")
                     METH[] == 1 && @warn("[lsoda] a switch to the nonstiff method has occurred")
@@ -521,7 +524,7 @@ function stoda(neq::Int, prob)
         resetcoeff()
     end
     if JSTART[] == -1
-        DOPRINT[] && println("=================== MITER = $(MITER[])=====")
+        #DOPRINT[] && println("=================== MITER = $(MITER[])=====")
         IPUP[] = MITER[]
         LMAX[] = MAXORD[] + 1
         if IALTH[] == 1
@@ -566,9 +569,11 @@ function stoda(neq::Int, prob)
             end
             pnorm = vmnorm(N[], YH[][1,:], EWT[])
             #Ref??? y
-            NFE[] >= 78 && (DOPRINT[] = true)
+            NFE[] >= 83 && (DOPRINT[] = true)
             correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m)
-            DOPRINT[] && println("h = $(round(H[], digits=7)), nfe = $(NFE[]), method = $(METH[]), y = $(y[1]), $(y[2]), $(y[3]))")
+            #DOPRINT[] && println("h = $(round(H[], digits=7)), nfe = $(NFE[]), method = $(METH[]), y = $(y[1]), $(y[2]), $(y[3]))")
+
+            DOPRINT[] && @printf(stderr, "tn = %f, h = %f, nfe = %d, method = %d, y = %.12f, %.12f, %.12f\n", TN[], H[], NFE[], METH[], y[1],y[2],y[3]);
             if corflag[] == 0
                 break
             end
@@ -616,7 +621,7 @@ function stoda(neq::Int, prob)
                 end
             end
             IALTH[] -= 1
-            DOPRINT[] && println("IALTH = $(IALTH[])")
+            #DOPRINT[] && println("IALTH = $(IALTH[])")
             if IALTH[] == 0
                 rhup = Ref(0.0)
                 if L[] != LMAX[]
@@ -629,7 +634,7 @@ function stoda(neq::Int, prob)
                     rhup[] = 1 / (1.4 * dup ^ exup +0.0000014)
                 end
                 orderswitch(rhup, dsm, pdh, rh, orderflag)
-                DOPRINT[] && println("orderflag = $(orderflag[])")
+                #DOPRINT[] && println("orderflag = $(orderflag[])")
                 if orderflag[] == 0
                     endstoda()
                     break
@@ -734,12 +739,12 @@ function cfode(meth::Int)
     pc = zeros(12)
     if meth == 1
         ELCO[1, 1] = 1.0
-		ELCO[1, 2] = 1.0
-		TESCO[1, 1] = 0.0
-		TESCO[1, 2] = 2.0
-		TESCO[2, 1] = 1.0
-		TESCO[12, 3] = 0.0
-		pc[1] = 1.0
+        ELCO[1, 2] = 1.0
+        TESCO[1, 1] = 0.0
+        TESCO[1, 2] = 2.0
+        TESCO[2, 1] = 1.0
+        TESCO[12, 3] = 0.0
+        pc[1] = 1.0
         rqfac = 1.0
         for nq = 2:12
             rq1fac = rqfac
@@ -899,7 +904,7 @@ function prja(neq::Int, prob)
         @warn("[prja] miter != 2\n")
         return
     end
-    DOPRINT[] && @show MITER[]
+    #DOPRINT[] && @show MITER[]
     if MITER[] == 2
         fac = vmnorm(N[], SAVF[], EWT[])
         r0 = 1000 * abs(H[]) * eps() * N[] *fac
@@ -914,12 +919,12 @@ function prja(neq::Int, prob)
             @views prob.f(ACOR[], y, prob.p, TN[])
             for i in 1:N[]
                 WM[][i, j] = (ACOR[][i] - SAVF[][i]) * fac
-                @show WM[][i, j]
+                #DOPRINT[] && @show WM[][i, j]
             end
             y[j] = yj
         end
         NFE[] += N[]
-        DOPRINT[] && println("=========== hiiiiiii ===========")
+        #DOPRINT[] && println("=========== hiiiiiii ===========")
         PDNORM[] = fnorm(N[], WM[], EWT[]) / abs(hl0)
         for i in 1:N[]
             WM[][i, i] += 1.0
@@ -961,7 +966,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
     @views prob.f(SAVF[], y, prob.p, TN[])
     NFE[] += 1
     while true
-        DOPRINT[] && @show m[], IPUP[]
+        #DOPRINT[] && @show m[], IPUP[]
         if m[] == 0
             if IPUP[] > 0
                 prja(neq, prob)
@@ -1025,7 +1030,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         m[] += 1
-        DOPRINT[] && println("m = $(m[])")
+        #DOPRINT[] && println("m = $(m[])")
         if m[] == MAXCOR[] || (m[] >= 2 && del[] > 2 * delp[])
             if MITER[] == 0 || JCUR[] == 1
                 corfailure(told, rh, ncf, corflag)
@@ -1085,38 +1090,38 @@ end
 
 function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64})
     if (METH[] == 1)
-		if (NQ[] > 5)
+        if (NQ[] > 5)
             return
         end
-		if (dsm <= (100 * pnorm * eps()) || PDEST[] == 0)
-			if (IRFLAG[] == 0)
+        if (dsm <= (100 * pnorm * eps()) || PDEST[] == 0)
+            if (IRFLAG[] == 0)
                 return
             end
-			rh2 = 2.0
+            rh2 = 2.0
             nqm2 = min(NQ[], MXORDS[])
-		else
-			exsm = 1 / L[]
-			rh1 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
-			rh1it = 2 * rh1
-			pdh[] = PDLAST[] * abs(H[])
-			if (pdh[] * rh1) > 0.00001
+        else
+            exsm = 1 / L[]
+            rh1 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
+            rh1it = 2 * rh1
+            pdh[] = PDLAST[] * abs(H[])
+            if (pdh[] * rh1) > 0.00001
                 rh1it = SM1[NQ[]] / pdh[]
             end
-			rh1 = min(rh1, rh1it)
-			if (NQ[] > MXORDS[])
-				nqm2 = MXORDS[]
-				lm2 = MXORDS[] + 1
-				exm2 = 1 / lm2
-				lm2p1 = lm2 + 1
-				dm2 = vmnorm(N[], YH[][lm2p1,:], EWT[]) / CM2[MXORDS[]]
-				rh2 = 1 / (1.2 * (dm2 ^ exm2) + 0.0000012)
-			else
-				dm2 = dsm * (CM1[NQ[]] / CM2[NQ[]])
-				rh2 = 1 / (1.2 * (dm2 ^ exsm) + 0.0000012)
-				nqm2 = NQ[]
+            rh1 = min(rh1, rh1it)
+            if (NQ[] > MXORDS[])
+                nqm2 = MXORDS[]
+                lm2 = MXORDS[] + 1
+                exm2 = 1 / lm2
+                lm2p1 = lm2 + 1
+                dm2 = vmnorm(N[], YH[][lm2p1,:], EWT[]) / CM2[MXORDS[]]
+                rh2 = 1 / (1.2 * (dm2 ^ exm2) + 0.0000012)
+            else
+                dm2 = dsm * (CM1[NQ[]] / CM2[NQ[]])
+                rh2 = 1 / (1.2 * (dm2 ^ exsm) + 0.0000012)
+                nqm2 = NQ[]
             end
-			if (rh2 < RATIO[] * rh1)
-				return
+            if (rh2 < RATIO[] * rh1)
+                return
             end
         end
 
@@ -1158,6 +1163,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
     alpha = max(0.001, rh1)
     dm1 *= alpha ^ exm1
     if dm1 <= 1000 * eps() * pnorm
+        DOPRINT[] && @printf("2222222222\n")
         return
     end
     rh[] = rh1
