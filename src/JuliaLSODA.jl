@@ -67,6 +67,7 @@ mutable struct JLSODAIntegrator
     crate::Float64 #in stru
     hold::Float64 #in stru
     rmax::Float64 #in stru
+    tfirst::Float64
 
     #ml::Int64 #in stru
     #mu::Int64 #in stru
@@ -120,8 +121,7 @@ mutable struct JLSODAIntegrator
     ewt::Vector{Float64}
     savf::Vector{Float64}
     acor::Vector{Float64}
-    yp1::Any
-    yp2::Any
+    sol::Vector{Float64}
     function JLSODAIntegrator()
         obj = new()
         obj.el = zeros(13)
@@ -154,21 +154,19 @@ function terminate!(istate::Ref{Int}, integrator::JLSODAIntegrator)
 end
 
 function terminate2!(y::Vector{Float64}, t::Ref{Float64}, integrator::JLSODAIntegrator)
-    integrator.yp1 = @view integrator.yh[1,:]
     for i in 1:integrator.n
-        y[i] = integrator.yp1[i]
+        y[i] = integrator.yh[1,:][i]
     end
-    t[] = integrator.tn
+    integrator.tfirst = integrator.tn
     integrator.illin = 0
     return
 end
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, tcrit::Float64, istate::Ref{Int}, integrator::JLSODAIntegrator)
-    integrator.yp1 = @view integrator.yh[1,:]
     for i in 1:integrator.n
-        y[i] = integrator.yp1[i]
+        y[i] = integrator.yh[1,:][i]
     end
-    t[] = integrator.tn
+    integrator.tfirst = integrator.tn
     if itask == 4 || itask == 5
         if bool(ihit)
             t = tcrit
@@ -176,7 +174,7 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
     end
     istate[] = 2
     integrator.illin = 0
-    return
+    return 
 end
 
 function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
@@ -207,14 +205,15 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         terminate!(istate, integrator)
     end
 
-    t = Ref(first(prob.tspan))
+    integrator.tfirst = first(prob.tspan)
     neq = length(prob.u0)
     # NOTE!!! this function mutates `prob.u0`
-    y = prob.u0
+    integrator.sol = copy(prob.u0)
+    y = integrator.sol
     integrator.n = neq
     if istate[] == 1
         integrator.illin = 0
-        if tout == t[]
+        if tout == integrator.tfirst
             integrator.ntrep += 1
             integrator.ntrep < 5 && return
             @warn("[lsoda] repeated calls with istate = 1 and tout = t. run aborted.. apparent infinite loop\n")
@@ -254,16 +253,16 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 
     ### Block c ###
     if istate[] == 1
-        integrator.tn = t[]
-        integrator.tsw = t[]
+        integrator.tn = integrator.tfirst
+        integrator.tsw = integrator.tfirst
         integrator.maxord = integrator.mxordn
         if tcrit != nothing
-            if (tcrit - tout) * (tout - t[]) < 0
+            if (tcrit - tout) * (tout - integrator.tfirst) < 0
                 @warn("tcrit behind tout")
                 terminate!(istate, integrator)
             end
-            if (h0 != 0.0 && (t[] + h0 - tcrit) * h0 > 0.0)
-                h0 = tcrit - t[]
+            if (h0 != 0.0 && (integrator.tfirst + h0 - tcrit) * h0 > 0.0)
+                h0 = tcrit - integrator.tfirst
             end
         end
         integrator.meth = 2
@@ -291,10 +290,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         integrator.nfe = 1
         #prob.f(du,u,p,t)
         #(double t, double *y, double *ydot, void *data)
-        @views prob.f(integrator.yh[2,:], y, prob.p, t[])
-        integrator.yp1 = @view integrator.yh[1,:]
-        for i in 1:integrator.n
-            integrator.yp1[i] = y[i]
+        @views prob.f(integrator.yh[2,:], y, prob.p, integrator.tfirst)
+        @views for i in 1:integrator.n
+            integrator.yh[1,:][i] = y[i]
         end
         integrator.nq = 1
         integrator.h = 1.0
@@ -310,8 +308,8 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
 
         #compute h0, the first step size,
         if h0 == 0.0
-            tdist = abs(tout - t[])
-            w0 = max(abs(t[]), abs(tout))
+            tdist = abs(tout - integrator.tfirst)
+            w0 = max(abs(integrator.tfirst), abs(tout))
             if tdist < 2 * eps() *w0
                 @warn("[lsoda] tout too close to t to start integration")
                 terminate!(istate, integrator)
@@ -332,15 +330,14 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             sum = 1 / (tol * w0 * w0) + tol * sum * sum
             h0 = 1 / sqrt(sum)
             h0 = min(h0, tdist)
-            # h0 = h0 * ((tout - t[] >= 0) ? 1 : -1)
-            h0 = copysign(h0, tout - t[])
+            # h0 = h0 * ((tout - integrator.tfirst >= 0) ? 1 : -1)
+            h0 = copysign(h0, tout - integrator.tfirst)
         end
         rh = abs(h0) * integrator.hmxi
         rh > 1 && (h0 /= rh)
         integrator.h = h0
-        integrator.yp1 = @view integrator.yh[2,:]
-        for i in 1:integrator.n
-            integrator.yp1[i] *= h0
+        @views for i in 1:integrator.n
+            integrator.yh[2,:][i] *= h0
         end
     end
 
@@ -349,13 +346,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         integrator.nslast = integrator.nst
         if itask == 1
             if ((integrator.tn - tout) * integrator.h >= 0)
-                intdy!(tout, 0, y, iflag, integrator)
+                intdy!(tout, 0, integrator.sol, iflag, integrator)
                 if iflag[] != 0
                     @warn("[lsoda] trouble from intdy, itask = $itask, tout = $tout\n")
                     terminate!(istate, integrator)
                     return
                 end
-                t[] = tout
+                integrator.tfirst = tout
                 istate[] = 2
                 integrator.illin = 0
                 return
@@ -382,13 +379,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 return
             end
             if ((integrator.tn - tout) * integrator.h >= 0)
-                intdy!(tout, 0, y, iflag, integrator)
+                intdy!(tout, 0, integrator.sol, iflag, integrator)
                 if iflag != 0
                     @warn("[lsoda] trouble from intdy, itask = $itask, tout = $tout\n")
                     terminate!(istate, integrator)
                     return
                 end
-                t[] = tout
+                integrator.tfirst = tout
                 istate[] = 2
                 integrator.illin = 0
                 return
@@ -402,7 +399,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             hmx = abs(integrator.tn) + abs(integrator.h)
             ihit = abs(integrator.tn - tcrit) <= (100 * eps() *hmx)
             if Bool(ihit)
-                t[] = tcrit
+                integrator.tfirst = tcrit
                 successreturn!(y, t, itask, ihit, tcrit, istate, integrator)
                 return
             end
@@ -447,7 +444,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 terminate!(istate, integrator, integrator)
                 return
             end
-            @warn("""lsoda -- at t = $(t[]), too much accuracy requested
+            @warn("""lsoda -- at t = $(integrator.tfirst), too much accuracy requested
                      for precision of machine, suggested
                      scaling factor = $tolsf""")
             istate[] = -2
@@ -489,36 +486,36 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 if (integrator.tn - tout) * integrator.h < 0
                     continue
                 end
-                intdy!(tout, 0, y, iflag, integrator)
-                t[] = tout
+                intdy!(tout, 0, integrator.sol, iflag, integrator)
+                integrator.tfirst = tout
                 istate[] = 2
                 integrator.illin = 0
-                return
+                return integrator.sol
             end
             if itask == 2
                 successreturn(y, t, itask, ihit, tcrit, istate, integrator)
-                return
+                return integrator.sol
             end
             if itask == 3
                 if (integrator.tn - tout) * integrator.h >= 0
                     successreturn(y, t, itask, ihit, tcrit, istate, integrator)
-                    return
+                    return integrator.sol
                 end
                 continue
             end
             if itask == 4
                 if (integrator.tn - tout) * integrator.h >= 0
-                    intdy!(tout, 0, y, iflag, integrator)
-                    t[] = tout
+                    intdy!(tout, 0, integrator.sol, iflag, integrator)
+                    integrator.tfirst = tout
                     istate[] =2
                     integrator.illin = 0
-                    return
+                    return integrator.sol
                 else
                     hmx = abs(integrator.tn) + abs(integrator.h)
                     ihit = abs(tn - tcrit) <= 100 * eps() *hmx
                     if Bool(ihit)
                         successreturn(y, t, itask, ihit, tcrit, istate, integrator)
-                        return
+                        return integrator.sol
                     end
                     tnext = integrator.tn + integrator.h * (1 + 4 * eps())
                     if ((tnext - tcrit) * integrator.h <= 0)
@@ -533,7 +530,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 hmx = abs(integrator.tn) + abs(integrator.h)
                 ihit = abs(integrator.tn - tcrit) <= (100 * eps() * hmx)
                 successreturn(y, t, itask, ihit, tcrit, istate, integrator)
-                return
+                return integrator.sol
             end
         end
 
@@ -564,18 +561,35 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
     return
 end
 
-function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
-    y = prob.u0
+mutable struct StodaRef{tType}
+    corflag::Int64
+    ncf::Int64
+    m::Int64
+    orderflag::Int64
+    delp::Float64
+    del::Float64
+    pdh::Float64
+    rh::Float64
+    told:: tType
+    function StodaRef(told::tType) where {tType}
+        obj = new{typeof(told)}()
+        obj.corflag = 0
+        obj.ncf = 0
+        obj.m = 0
+        obj.orderflag = 0
+        obj.delp = 0
+        obj.del = 0
+        obj.pdh = 0.0
+        obj.rh = 0.0
+        obj.told = told
+        return obj
+    end
+end
+
+function stoda(neq::Int, prob::ODEProblem, integrator::JLSODAIntegrator)
+    y = integrator.sol
     integrator.kflag = 0
-    told = Ref(integrator.tn)
-    corflag = Ref(0)
-    ncf = Ref(0)
-    delp = Ref(0.0)
-    del = Ref(0.0)
-    m = Ref(0)
-    pdh = Ref(0.0)
-    rh = Ref(0.0)
-    orderflag = Ref(0)
+    stodaref = StodaRef(integrator.tn)
     integrator.ierpj = 0
     integrator.iersl = 0
     integrator.jcur = 0
@@ -618,16 +632,16 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
             resetcoeff(integrator)
         end
         if integrator.h != integrator.hold
-            rh[] = integrator.h / integrator.hold
+            stodaref.rh = integrator.h / integrator.hold
             integrator.h = integrator.hold
-            scaleh(rh, pdh, integrator)
+            scaleh(integrator, stodaref)
         end
     end
     if integrator.jstart == -2
         if integrator.h != integrator.hold
-            rh[] = integrator.h / integrator.hold
+            stodaref.rh = integrator.h / integrator.hold
             integrator.h = integrator.hold
-            scaleh(rh, pdh, integrator)
+            scaleh(integrator, stodaref)
         end
     end
     while true
@@ -640,29 +654,27 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
                 integrator.ipup = integrator.miter
             end
             integrator.tn += integrator.h
-            for j in integrator.nq : -1 : 1
+            @views for j in integrator.nq : -1 : 1
                 for i1 in j : integrator.nq
-                    integrator.yp1 = @view integrator.yh[i1, :]
-                    integrator.yp2 = @view integrator.yh[i1 + 1, :]
                     for i in 1:integrator.n
-                        integrator.yp1[i] += integrator.yp2[i]
+                        integrator.yh[i1, :][i] += integrator.yh[i1 + 1, :][i]
                     end
                 end
             end
             pnorm = vmnorm(integrator.n, integrator.yh[1,:], integrator.ewt)
             #Ref??? y
             #integrator.nfe >= 80 && (DOPRINT[] = true)
-            correction(neq, prob, corflag, pnorm, del, delp, told, ncf, rh, m, integrator)
-            #DOPRINT[] && @printf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", integrator.tn, del[], integrator.nfe, integrator.meth, y[1]);
-            if corflag[] == 0
+            correction(neq, prob, pnorm, integrator, stodaref)
+            #DOPRINT[] && @printf(stderr, "tn = %f, del = %f, nfe = %d, method = %d, y[1] = %.12f\n", integrator.tn, stodaref.del, integrator.nfe, integrator.meth, y[1]);
+            if stodaref.corflag == 0
                 break
             end
-            if corflag[] == 1
-                rh[] = max(rh[], integrator.hmin/abs(integrator.h))
-                scaleh(rh, pdh, integrator)
+            if stodaref.corflag == 1
+                stodaref.rh = max(stodaref.rh, integrator.hmin/abs(integrator.h))
+                scaleh(integrator, stodaref)
                 continue
             end
-            if corflag[] == 2
+            if stodaref.corflag == 2
                 integrator.kflag = -2
                 integrator.hold = integrator.h
                 integrator.jstart = 1
@@ -670,10 +682,10 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
             end
         end
         integrator.jcur = 0
-        if m[] == 0
-            dsm = del[] / integrator.tesco[integrator.nq, 2]
+        if stodaref.m == 0
+            dsm = stodaref.del / integrator.tesco[integrator.nq, 2]
         end
-        if m[] > 0
+        if stodaref.m > 0
             dsm = vmnorm(integrator.n, integrator.acor, integrator.ewt) / integrator.tesco[integrator.nq,2]
         end
         if dsm <= 1.0
@@ -682,19 +694,18 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
             integrator.hu = integrator.h
             integrator.nqu = integrator.nq
             integrator.mused = integrator.meth
-            for j = 1:integrator.l
-                integrator.yp1 = @view integrator.yh[j, :]
+            @views for j = 1:integrator.l
                 r = integrator.el[j]
                 for i = 1:integrator.n
-                    integrator.yp1[i] += r * integrator.acor[i]
+                    integrator.yh[j,:][i] += r * integrator.acor[i]
                 end
             end
             integrator.icount -= 1
             if integrator.icount < 0
-                methodswitch(dsm, pnorm, pdh, rh, integrator)
+                methodswitch(dsm, pnorm, integrator, stodaref)
                 if integrator.meth != integrator.mused
-                    rh[] = max(rh[], integrator.hmin / abs(integrator.h))
-                    scaleh(rh, pdh, integrator)
+                    stodaref.rh = max(stodaref.rh, integrator.hmin / abs(integrator.h))
+                    scaleh(integrator, stodaref)
                     integrator.rmax = 10.0
                     endstoda(integrator)
                     break
@@ -704,30 +715,29 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
             if integrator.ialth == 0
                 rhup = Ref(0.0)
                 if integrator.l != integrator.lmax
-                    integrator.yp1 = @view integrator.yh[integrator.lmax, :]
                     for i in 1:integrator.n
-                        integrator.savf[i] = integrator.acor[i] - integrator.yp1[i]
+                        integrator.savf[i] = integrator.acor[i] - integrator.yh[integrator.lmax, :][i]
                     end
                     dup = vmnorm(integrator.n, integrator.savf, integrator.ewt) / integrator.tesco[integrator.nq, 3]
                     exup = 1 / (integrator.l + 1)
                     rhup[] = 1 / (1.4 * dup ^ exup +0.0000014)
                 end
-                orderswitch(rhup, dsm, pdh, rh, orderflag, integrator)
-                if orderflag[] == 0
+                orderswitch(rhup, dsm, integrator, stodaref)
+                if stodaref.orderflag == 0
                     endstoda(integrator)
                     break
                 end
-                if orderflag[] == 1
-                    rh[] = max(rh[], integrator.hmin / abs(integrator.h))
-                    scaleh(rh, pdh, integrator)
+                if stodaref.orderflag == 1
+                    stodaref.rh = max(stodaref.rh, integrator.hmin / abs(integrator.h))
+                    scaleh(integrator, stodaref)
                     integrator.rmax = 10.0
                     endstoda(integrator)
                     break
                 end
-                if orderflag[] == 2
+                if stodaref.orderflag == 2
                     resetcoeff(integrator)
-                    rh[] = max(rh[], integrator.hmin / abs(integrator.h))
-                    scaleh(rh, pdh, integrator)
+                    stodaref.rh = max(stodaref.rh, integrator.hmin / abs(integrator.h))
+                    scaleh(integrator, stodaref)
                     integrator.rmax = 10
                     endstoda(integrator)
                     break
@@ -737,21 +747,18 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
                 endstoda(integrator)
                 break
             end
-            integrator.yp1 = @view integrator.yh[integrator.lmax, :]
-            for i in 1:integrator.n
-                integrator.yp1[i] = integrator.acor[i]
+            @views for i in 1:integrator.n
+                integrator.yh[integrator.lmax, :][i] = integrator.acor[i]
             end
             endstoda(integrator)
             break
         else
             integrator.kflag -= 1
-            integrator.tn = told[]
+            integrator.tn = stodaref.told
             for j in integrator.nq : -1 : 1
                 for i1 in j:integrator.nq
-                    integrator.yp1 = @view integrator.yh[i1, :]
-                    integrator.yp2 = @view integrator.yh[i1+1, :]
-                    for i in 1:integrator.n
-                        integrator.yp1[i] -= integrator.yp2[i]
+                    @views for i in 1:integrator.n
+                        integrator.yh[i1, :][i] -= integrator.yh[i1+1, :][i]
                     end
                 end
             end
@@ -764,18 +771,18 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
             end
             if integrator.kflag > -3
                 rhup = Ref(0.0)
-                orderswitch(rhup, dsm, pdh, rh, orderflag, integrator)
-                if orderflag[] == 1 || orderflag[] == 0
-                    if orderflag[] == 0
-                        rh[] = min(rh[], 0.2)
+                orderswitch(rhup, dsm, integrator, stodaref)
+                if stodaref.orderflag == 1 || stodaref.orderflag == 0
+                    if stodaref.orderflag == 0
+                        stodaref.rh = min(stodaref.rh, 0.2)
                     end
-                    rh[] = max(rh[], integrator.hmin / abs(integrator.h))
-                    scaleh(rh, pdh, integrator)
+                    stodaref.rh = max(stodaref.rh, integrator.hmin / abs(integrator.h))
+                    scaleh(integrator, stodaref)
                 end
-                if orderflag[] == 2
+                if stodaref.orderflag == 2
                     resetcoeff(integrator)
-                    rh[] = max(rh[], integrator.hmin / abs(integrator.h))
-                    scaleh(rh, pdh, integrator)
+                    stodaref.rh = max(stodaref.rh, integrator.hmin / abs(integrator.h))
+                    scaleh(integrator, stodaref)
                 end
                 continue
             else
@@ -785,18 +792,16 @@ function stoda(neq::Int, prob, integrator::JLSODAIntegrator)
                     integrator.jstart = 1
                     break
                 else
-                    rh[] = 0.1
-                    rh[] = max(integrator.hmin / abs(integrator.h), rh[])
-                    integrator.h *= rh[]
-                    integrator.yp1 = @view integrator.yh[1,:]
+                    stodaref.rh = 0.1
+                    stodaref.rh = max(integrator.hmin / abs(integrator.h), stodaref.rh)
+                    integrator.h *= stodaref.rh
                     for i in 1:integrator.n
-                        y[i] = integrator.yp1[i]
+                        y[i] = integrator.yh[1,:][i]
                     end
                     @views prob.f(integrator.savf, y, prob.p, integrator.tn)
                     integrator.nfe += 1
-                    integrator.yp1 = @view integrator.yh[2,:]
-                    for i in 1:integrator.n
-                        integrator.yp1[i] = integrator.h * integrator.savf[i]
+                    @views for i in 1:integrator.n
+                        integrator.yh[2,:][i] = integrator.h * integrator.savf[i]
                     end
                     integrator.ipup = integrator.miter
                     integrator.ialth = 5
@@ -880,27 +885,26 @@ function cfode(meth::Int, integrator::JLSODAIntegrator)
     return
 end
 
-function scaleh(rh::Ref{Float64}, pdh::Ref{Float64}, integrator::JLSODAIntegrator)
-    rh[] = min(rh[], integrator.rmax)
-    rh[] = rh[] / max(1, abs(integrator.h * integrator.hmxi * rh[]))
+function scaleh(integrator::JLSODAIntegrator, stodaref::StodaRef)
+    stodaref.rh = min(stodaref.rh, integrator.rmax)
+    stodaref.rh = stodaref.rh / max(1, abs(integrator.h * integrator.hmxi * stodaref.rh))
     if integrator.meth ==1
         integrator.irflag = 0
-        pdh[] = max(abs(integrator.h) * integrator.pdlast, 0.000001)
-        if rh[] * pdh[] * 1.00001 >= SM1[integrator.nq]
-            rh[] = SM1[integrator.nq] / pdh[]
+        stodaref.pdh = max(abs(integrator.h) * integrator.pdlast, 0.000001)
+        if stodaref.rh * stodaref.pdh * 1.00001 >= SM1[integrator.nq]
+            stodaref.rh = SM1[integrator.nq] / stodaref.pdh
             integrator.irflag = 1
         end
     end
     r = 1.0
     for j in 2:integrator.l
-        r *= rh[]
-        integrator.yp1 = @view integrator.yh[j, :]
-        for i = 1:integrator.n
-            integrator.yp1[i] *= r
+        r *= stodaref.rh
+        @views for i = 1:integrator.n
+            integrator.yh[j,:][i] *= r
         end
     end
-    integrator.h *= rh[]
-    integrator.rc *= rh[]
+    integrator.h *= stodaref.rh
+    integrator.rc *= stodaref.rh
     integrator.ialth = integrator.l
 end
 
@@ -947,9 +951,8 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int}, integ
     for jj in (integrator.l - k):integrator.nq
         c *= jj
     end
-    integrator.yp1 = @view integrator.yh[integrator.l,:]
     for i in 1:integrator.n
-        dky[i] = c * integrator.yp1[i]
+        dky[i] = c * integrator.yh[integrator.l,:][i]
     end
     for j in (integrator.nq -1 : -1 : k)
         jp1 = j + 1
@@ -957,9 +960,8 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int}, integ
         for jj in jp1 - k : j
             c *= jj
         end
-        integrator.yp1 = @view integrator.yh[jp1, :]
         for i = 1 : integrator.n
-            dky[i] = c * integrator.yp1[i] + s *dky[i]
+            dky[i] = c * integrator.yh[jp1,:][i] + s *dky[i]
         end
     end
     if k == 0
@@ -972,8 +974,8 @@ function intdy!(t::Float64, k::Int, dky::Vector{Float64}, iflag::Ref{Int}, integ
     return
 end
 
-function prja(neq::Int, prob, integrator::JLSODAIntegrator)
-    y = prob.u0
+function prja(neq::Int, prob::ODEProblem, integrator::JLSODAIntegrator)
+    y = integrator.sol
     integrator.nje += 1
     integrator.ierpj = 0
     integrator.jcur = 1
@@ -1023,22 +1025,20 @@ function fnorm(n::Int, a::Matrix{Float64}, w::Vector{Float64})
     return an
 end
 
-function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float64,
-    del::Ref{Float64}, delp::Ref{Float64}, told::Ref{Float64}, ncf::Ref{Int}, rh::Ref{Float64},
-    m::Ref{Int}, integrator::JLSODAIntegrator)
-    y = prob.u0
-    m[] = 0
-    corflag[] = 0
+function correction(neq::Int, prob::ODEProblem, pnorm::Float64,
+    integrator::JLSODAIntegrator, stodaref::StodaRef)
+    y = integrator.sol
+    stodaref.m = 0
+    stodaref.corflag = 0
     rate = 0.0
-    del[] = 0
-    integrator.yp1 = @view integrator.yh[1, :]
+    stodaref.del = 0
     for i in 1:integrator.n
-        y[i] = integrator.yp1[i]
+        y[i] = integrator.yh[1,:][i]
     end
     @views prob.f(integrator.savf, y, prob.p, integrator.tn)
     integrator.nfe += 1
     while true
-        if m[] == 0
+        if stodaref.m == 0
             if integrator.ipup > 0
                 prja(neq, prob, integrator)
                 integrator.ipup = 0
@@ -1046,7 +1046,7 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 integrator.nslp = integrator.nst
                 integrator.crate = 0.7
                 if integrator.ierpj != 0
-                    corfailure(told, rh, ncf, corflag, integrator)
+                    corfailure(integrator, stodaref)
                     return
                 end
             end
@@ -1055,43 +1055,39 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
             end
         end
         if integrator.miter == 0
-            integrator.yp1 = @view integrator.yh[2, :]
             for i in 1:integrator.n
-                integrator.savf[i] = integrator.h * integrator.savf[i] - integrator.yp1[i]
+                integrator.savf[i] = integrator.h * integrator.savf[i] - integrator.yh[2,:][i]
                 y[i] = integrator.savf[i] - integrator.acor[i]
             end
-            del[] = vmnorm(integrator.n, y, integrator.ewt)
-            integrator.yp1 = @view integrator.yh[1, :]
+            stodaref.del = vmnorm(integrator.n, y, integrator.ewt)
             for i = 1:integrator.n
-                y[i] = integrator.yp1[i] + integrator.el[1] * integrator.savf[i]
+                y[i] = integrator.yh[1,:][i] + integrator.el[1] * integrator.savf[i]
                 integrator.acor[i] = integrator.savf[i]
             end
         else
-            integrator.yp1 = @view integrator.yh[2, :]
             for i in 1:integrator.n
-                y[i] = integrator.h * integrator.savf[i] - (integrator.yp1[i] + integrator.acor[i])
+                y[i] = integrator.h * integrator.savf[i] - (integrator.yh[2,:][i] + integrator.acor[i])
             end
             y[:] = solsy(y, integrator)
-            del[] = vmnorm(integrator.n, y, integrator.ewt)
-            integrator.yp1 = @view integrator.yh[1, :]
+            stodaref.del = vmnorm(integrator.n, y, integrator.ewt)
             for i in 1:integrator.n
                 integrator.acor[i] += y[i]
-                y[i] = integrator.yp1[i] + integrator.el[1] *integrator.acor[i]
+                y[i] = integrator.yh[1, :][i] + integrator.el[1] *integrator.acor[i]
             end
         end
-        if del[] <= 100 *pnorm *eps()
+        if stodaref.del <= 100 *pnorm *eps()
             break
         end
-        if m[] != 0 || integrator.meth != 1
-            if m[] != 0
+        if stodaref.m != 0 || integrator.meth != 1
+            if stodaref.m != 0
                 rm = 1024
-                if del[] <= (1024 * delp[])
-                    rm = del[] / delp[]
+                if stodaref.del <= (1024 * stodaref.delp)
+                    rm = stodaref.del / stodaref.delp
                 end
                 rate = max(rate, rm)
                 integrator.crate = max(0.2 * integrator.crate, rm)
             end
-            dcon = del[] * min(1.0, 1.5 * integrator.crate) / (integrator.tesco[integrator.nq, 2] * integrator.conit)
+            dcon = stodaref.del * min(1.0, 1.5 * integrator.crate) / (integrator.tesco[integrator.nq, 2] * integrator.conit)
             if dcon <= 1.0
                 integrator.pdest = max(integrator.pdest, rate / abs(integrator.h * integrator.el[1]))
                 if integrator.pdest != 0
@@ -1100,50 +1096,46 @@ function correction(neq::Int, prob::ODEProblem, corflag::Ref{Int}, pnorm::Float6
                 break
             end
         end
-        m[] += 1
-        if m[] == integrator.maxcor || (m[] >= 2 && del[] > 2 * delp[])
+        stodaref.m += 1
+        if stodaref.m == integrator.maxcor || (stodaref.m >= 2 && stodaref.del > 2 * stodaref.delp)
             if integrator.miter == 0 || integrator.jcur == 1
-                corfailure(told, rh, ncf, corflag, integrator)
+                corfailure(integrator, stodaref)
                 return
             end
             integrator.ipup = integrator.miter
-            m[] = 0
+            stodaref.m = 0
             rate = 0
-            del[] = 0
-            integrator.yp1 = @view integrator.yh[1, :]
+            stodaref.del = 0
             for i in 1:integrator.n
-                y[i] = integrator.yp1[i]
+                y[i] = integrator.yh[1, :][i]
             end
             @views prob.f(integrator.savf, y, prob.p, integrator.tn)
             integrator.nfe += 1
         else
-            delp[] = del[]
+            stodaref.delp = stodaref.del
             @views prob.f(integrator.savf, y, prob.p, integrator.tn)
             integrator.nfe += 1
         end
     end
 end
 
-function corfailure(told::Ref{Float64}, rh::Ref{Float64}, ncf::Ref{Int},
-    corflag::Ref{Int}, integrator::JLSODAIntegrator)
-    ncf[] += 1
+function corfailure(integrator::JLSODAIntegrator, stodaref::StodaRef)
+    stodaref.ncf += 1
     integrator.rmax = 2.0
-    integrator.tn = told[]
+    integrator.tn = stodaref.told
     for j in integrator.nq : -1 : 1
         for i1 in j : integrator.nq
-            integrator.yp1 = @view integrator.yh[i1, :]
-            integrator.yp2 = @view integrator.yh[i1 + 1, :]
-            for i in 1 : integrator.n
-                integrator.yp1[i] -= integrator.yp2[i]
+            @views for i in 1 : integrator.n
+                integrator.yh[i1, :][i] -= integrator.yh[i1 + 1, :][i]
             end
         end
     end
-    if (abs(integrator.h) <= integrator.hmin * 1.00001) || (ncf[] == integrator.mxncf)
-        corflag[] = 2
+    if (abs(integrator.h) <= integrator.hmin * 1.00001) || (stodaref.ncf == integrator.mxncf)
+        stodaref.corflag = 2
         return
     end
-    corflag[] = 1
-    rh[] = 0.25
+    stodaref.corflag = 1
+    stodaref.rh = 0.25
     integrator.ipup = integrator.miter
 end
 
@@ -1158,7 +1150,7 @@ function solsy(y::Vector{Float64}, integrator::JLSODAIntegrator)
     end
 end
 
-function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{Float64}, integrator::JLSODAIntegrator)
+function methodswitch(dsm::Float64, pnorm::Float64, integrator::JLSODAIntegrator, stodaref::StodaRef)
     if (integrator.meth == 1)
         if (integrator.nq > 5)
             return
@@ -1173,9 +1165,9 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
             exsm = 1 / integrator.l
             rh1 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
             rh1it = 2 * rh1
-            pdh[] = integrator.pdlast * abs(integrator.h)
-            if (pdh[] * rh1) > 0.00001
-                rh1it = SM1[integrator.nq] / pdh[]
+            stodaref.pdh = integrator.pdlast * abs(integrator.h)
+            if (stodaref.pdh * rh1) > 0.00001
+                rh1it = SM1[integrator.nq] / stodaref.pdh
             end
             rh1 = min(rh1, rh1it)
             if (integrator.nq > integrator.mxords)
@@ -1195,7 +1187,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
             end
         end
 
-        rh[] = rh2
+        stodaref.rh = rh2
         integrator.icount = 20
         integrator.meth = 2
         integrator.miter = integrator.jtyp
@@ -1221,9 +1213,9 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
         exm1 = exsm
     end
     rh1it = 2 * rh1
-    pdh[] = integrator.pdnorm * abs(integrator.h)
-    if (pdh[] * rh1) > 0.00001
-        rh1it = SM1[nqm1] / pdh[]
+    stodaref.pdh = integrator.pdnorm * abs(integrator.h)
+    if (stodaref.pdh * rh1) > 0.00001
+        rh1it = SM1[nqm1] / stodaref.pdh
     end
     rh1 = min(rh1, rh1it)
     rh2 = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
@@ -1235,7 +1227,7 @@ function methodswitch(dsm::Float64, pnorm::Float64, pdh::Ref{Float64}, rh::Ref{F
     if dm1 <= 1000 * eps() * pnorm
         return
     end
-    rh[] = rh1
+    stodaref.rh = rh1
     integrator.icount = 20
     integrator.meth = 1
     integrator.miter = 0
@@ -1255,8 +1247,8 @@ function endstoda(integrator::JLSODAIntegrator)
 end
 
 
-function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Ref{Float64}, orderflag::Ref{Int}, integrator::JLSODAIntegrator)
-    orderflag[] = 0
+function orderswitch(rhup::Ref{Float64}, dsm::Float64, integrator::JLSODAIntegrator, stodaref::StodaRef)
+    stodaref.orderflag = 0
     exsm = 1 / integrator.l
     rhsm = 1 / (1.2 * (dsm ^ exsm) + 0.0000012)
     rhdn = 0
@@ -1267,45 +1259,44 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
     end
 
     if integrator.meth == 1
-        pdh[] = max(abs(integrator.h) * integrator.pdlast, 0.000001)
+        stodaref.pdh = max(abs(integrator.h) * integrator.pdlast, 0.000001)
         if integrator.l < integrator.lmax
-            rhup[] = min(rhup[], SM1[integrator.l] / pdh[])
+            rhup[] = min(rhup[], SM1[integrator.l] / stodaref.pdh)
         end
-        rhsm = min(rhsm, SM1[integrator.nq] / pdh[])
+        rhsm = min(rhsm, SM1[integrator.nq] / stodaref.pdh)
         if integrator.nq > 1
-            rhdn = min(rhdn, SM1[integrator.nq - 1] / pdh[])
+            rhdn = min(rhdn, SM1[integrator.nq - 1] / stodaref.pdh)
         end
         integrator.pdest = 0
     end
     if rhsm >= rhup[]
         if rhsm >= rhdn
             newq = integrator.nq
-            rh[] = rhsm
+            stodaref.rh = rhsm
         else
             newq = integrator.nq - 1
-            rh[] = rhdn
-            if integrator.kflag < 0 && rh[] > 1
-                rh[] = 1
+            stodaref.rh = rhdn
+            if integrator.kflag < 0 && stodaref.rh > 1
+                stodaref.rh = 1
             end
         end
     else
         if rhup[] <= rhdn
             newq = integrator.nq - 1
-            rh[] = rhdn
-            if integrator.kflag < 0 && rh[] > 1
-                rh[] = 1
+            stodaref.rh = rhdn
+            if integrator.kflag < 0 && stodaref.rh > 1
+                stodaref.rh = 1
             end
         else
-            rh[] = rhup[]
-            if rh[] >= 1.1
+            stodaref.rh = rhup[]
+            if stodaref.rh >= 1.1
                 r = integrator.el[integrator.l] / integrator.l
                 integrator.nq = integrator.l
                 integrator.l = integrator.nq + 1
-                integrator.yp1 = @view integrator.yh[integrator.l,:]
-                for i in 1:integrator.n
-                    integrator.yp1[i] = integrator.acor[i] * r
+                @views for i in 1:integrator.n
+                    integrator.yh[integrator.l, :][i] = integrator.acor[i] * r
                 end
-                orderflag[] = 2
+                stodaref.orderflag = 2
                 return
             else
                 integrator.ialth = 3
@@ -1314,28 +1305,28 @@ function orderswitch(rhup::Ref{Float64}, dsm::Float64, pdh::Ref{Float64}, rh::Re
         end
     end
     if integrator.meth == 1
-        if rh[] * pdh[] * 1.00001 < SM1[newq]
-            if integrator.kflag == 0 && rh[] < 1.1
+        if stodaref.rh * stodaref.pdh * 1.00001 < SM1[newq]
+            if integrator.kflag == 0 && stodaref.rh < 1.1
                 integrator.ialth = 3
                 return
             end
         end
     else
-        if integrator.kflag == 0 && rh[] < 1.1
+        if integrator.kflag == 0 && stodaref.rh < 1.1
             integrator.ialth = 3
             return
         end
     end
     if integrator.kflag <= -2
-        rh[] = min(rh[], 0.2)
+        stodaref.rh = min(stodaref.rh, 0.2)
     end
     if newq == integrator.nq
-        orderflag[] = 1
+        stodaref.orderflag = 1
         return
     end
     integrator.nq = newq
     integrator.l = integrator.nq + 1
-    orderflag[] = 2
+    stodaref.orderflag = 2
     return
 end
 
