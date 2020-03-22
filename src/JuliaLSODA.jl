@@ -6,7 +6,7 @@ using Reexport: @reexport
 @reexport using DiffEqBase
 
 using Printf
-
+using Parameters: @unpack
 export LSODA
 
 macro defconsts(expr, var)
@@ -48,92 +48,96 @@ const integrator.cm2 = zeros(5)
 @defconsts [YH, WM] Ref{Matrix{Float64}}(zeros(1,2))
 @defconsts [EWT, SAVF, ACOR] Ref{Vector{Float64}}(zeros(2))
 =#
-
-mutable struct JLSODAIntegrator
-    ccmax::Float64 #in stru
-    el0::Float64 #in stru
-    h::Float64 #in stru
-    hmin::Float64 #in stru 
-    hmxi::Float64 #in stru
-    hu::Float64 #in stru
-    rc::Float64 #in stru
-    tn::Float64 #in stru
-    tsw::Float64 #in stru
-    pdnorm::Float64 #in stru
-    pdest::Float64 #in stru
-    pdlast::Float64 #in stru 
-    ratio::Float64 #in stru
-    conit::Float64 #in stru
-    crate::Float64 #in stru
-    hold::Float64 #in stru
-    rmax::Float64 #in stru
-    tfirst::Float64
+mutable struct JLOptions{Rtol,Atol}
+    rtol::Rtol
+    atol::Atol
+end
+mutable struct JLSODAIntegrator{uType,tType,uElType,solType,Rtol,Atol}
+    ccmax::uElType #in stru  #When rc differs from 1 by more than ccmax, ipup is set to miter
+    el0::uElType #in stru #leading coeff
+    h::tType #in stru 
+    hmin::tType #in stru 
+    hmxi::tType #in stru
+    hu::tType #in stru
+    rc::uElType #in stru #rc is the ratio of new to old values of the coefficient h * el[1].
+    tn::tType #in stru
+    tsw::tType #in stru
+    pdnorm::tType #in stru what type
+    pdest::tType #in stru  ???
+    pdlast::tType #in stru ???
+    ratio::uElType #in stru
+    conit::uElType #in stru
+    crate::uElType #in stru
+    hold::tType #in stru
+    rmax::uElType #in stru
+    tfirst::tType
 
     #ml::Int64 #in stru
     #mu::Int64 #in stru
-    imxer::Int64 #in stru
-    illin::Int64 #in stru
-    init::Int64 #in stru
-    mxstep::Int64 #in stru
-    mxhnil::Int64 #in stru
-    nhnil::Int64 #in stru
-    ntrep::Int64 #in stru
-    nslast::Int64 #in stru
-    nyh::Int64 #in stru
-    ierpj::Int64 #in stru
-    iersl::Int64 #in stru
-    jcur::Int64 #in stru
-    jstart::Int64 #in stru
-    kflag::Int64 #in stru
-    l::Int64 #in stru
-    meth::Int64 #in stru
-    miter::Int64 #in stru
-    maxord::Int64 #in stru
-    maxcor::Int64 #in stru
-    msbp::Int64 #in stru
-    mxncf::Int64 #in stru
-    n::Int64 #in stru
-    nq::Int64 #in stru
-    nst::Int64 #in stru
-    nfe::Int64 #in stru
-    nje::Int64 #in stru
-    nqu::Int64 #in stru
-    ixpr::Int64 #in stru
-    jtyp::Int64 #in stru
-    mused::Int64 #in stru
-    mxordn::Int64 #in stru
-    mxords::Int64 #in stru
-    ialth::Int64 #in stru
-    ipup::Int64 #in stru
-    lmax::Int64 #in stru
-    nslp::Int64 #in stru
-    icount::Int64 #in stru
-    irflag::Int64 #in stru
+    imxer::Int #in stru
+    illin::Int #in stru
+    init::Int #in stru
+    mxstep::Int #in stru
+    mxhnil::Int #in stru
+    nhnil::Int #in stru
+    ntrep::Int #in stru
+    nslast::Int #in stru
+    nyh::Int #in stru
+    ierpj::Int #in stru
+    iersl::Int #in stru
+    jcur::Int #in stru
+    jstart::Int #in stru
+    kflag::Int #in stru
+    l::Int #in stru
+    meth::Int #in stru
+    miter::Int #in stru #corrector iteration method
+    maxord::Int #in stru
+    maxcor::Int #in stru
+    msbp::Int #in stru
+    mxncf::Int #in stru
+    n::Int #in stru
+    nq::Int #in stru 
+    nst::Int #in stru # number of steps 
+    nfe::Int #in stru # Number of f called
+    nje::Int #in stru
+    nqu::Int #in stru
+    ixpr::Int #in stru
+    jtyp::Int #in stru
+    mused::Int #in stru
+    mxordn::Int #in stru
+    mxords::Int #in stru
+    ialth::Int #in stru
+    ipup::Int #in stru #force a matrix update
+    lmax::Int #in stru
+    nslp::Int #in stru
+    icount::Int #in stru
+    irflag::Int #in stru
 
-    LUresult::LU{Float64,Array{Float64,2}}
-    el::Vector{Float64}
-    elco::Array{Float64,2}
-    tesco::Array{Float64,2}
-    cm1::Vector{Float64}
-    cm2::Vector{Float64}
-    yh::Matrix{Float64}
-    wm::Matrix{Float64}
-    ewt::Vector{Float64}
-    savf::Vector{Float64}
-    acor::Vector{Float64}
-    sol::Vector{Float64}
-    function JLSODAIntegrator()
-        obj = new()
-        obj.el = zeros(13)
-        obj.elco = zeros(12, 13)
-        obj.tesco = zeros(12, 3)
-        obj.cm1 = zeros(12)
-        obj.cm2 = zeros(5)
-        obj.yh = zeros(1,2)
-        obj.wm = zeros(1,2)
-        obj.ewt = zeros(2)
-        obj.savf = zeros(2)
-        obj.acor = zeros(2)
+    LUresult::LU{uElType,Array{uElType,2}}
+    el::Vector{uElType} #  l(x) = el[1] + el[2]*x + ... + el[nq+1]*x^nq.
+    elco::Array{uElType,2} # the method of order nq are stored in elco[nq][i]
+    tesco::Array{uElType,2} #test constants
+    cm1::Vector{uElType}
+    cm2::Vector{uElType}
+    yh::Matrix{uElType}
+    wm::Matrix{uElType}
+    ewt::uType
+    savf::uType
+    acor::uType #altered correction
+    sol::uType
+    solreturn::solType
+    opts::JLOptions{Rtol,Atol}
+    function JLSODAIntegrator(prob::ODEProblem, ::solType, ::Rtol, ::Atol) where{solType,Rtol,Atol}
+        @unpack u0, tspan, p = prob
+        obj = new{typeof(u0),eltype(tspan),eltype(u0),solType,Rtol,Atol}()
+        uElType = eltype(u0)
+        obj.el = zeros(uElType,13)
+        obj.elco = zeros(uElType,12, 13)
+        obj.tesco = zeros(uElType,12, 3)
+        obj.cm1 = zeros(uElType,12)
+        obj.cm2 = zeros(uElType,5)
+        obj.yh = zeros(uElType,1,2)
+        obj.wm = zeros(uElType,1,2)
         return obj
     end
 end
@@ -141,7 +145,7 @@ end
 struct LSODA <: DiffEqBase.AbstractODEAlgorithm
 end
 
-
+#=
 function terminate!(istate::Ref{Int}, integrator::JLSODAIntegrator)
     # TODO
     if integrator.illin == 5
@@ -161,6 +165,7 @@ function terminate2!(y::Vector{Float64}, t::Ref{Float64}, integrator::JLSODAInte
     integrator.illin = 0
     return
 end
+=#
 
 function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::Int, tcrit::Float64, istate::Ref{Int}, integrator::JLSODAIntegrator)
     for i in 1:integrator.n
@@ -172,22 +177,34 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
             t = tcrit
         end
     end
-    istate[] = 2
+    #istate[] = 2
     integrator.illin = 0
     return 
 end
 
-function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
-                            itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
+
+function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, timeseries=[], ts=[], ks=[];
+                            callback = nothing, saveat=Float64[], itask::Int=1, istate::Ref{Int}=Ref(1), iopt::Bool=false,
+                            save_everystep = isempty(saveat), dense = save_everystep && isempty(saveat),
+                            save_start = save_everystep || isempty(saveat) || typeof(saveat) <: Number ? true : prob.tspan[1] in saveat,
+                            save_timeseries = nothing,
+                            alias_u0=false,
                             tout=prob.tspan[end], rtol=Ref(1e-4), atol=Ref(1e-6),
                             tcrit#=tstop=#=nothing) where {uType,tType}
     #DOPRINT[] = false
-    integrator = JLSODAIntegrator()
+    @unpack f, u0, tspan, p = prob
+    uElType = eltype(u0)
+    timeseries = uType[]
+    ts = eltype(tspan)[]
+    solreturn = DiffEqBase.build_solution(prob,alg,ts,timeseries)
+    
+    integrator = JLSODAIntegrator(prob, solreturn, rtol, atol)
     integrator.pdnorm = 0
     integrator.jtyp = 2
     mxstp0 = 500
     mxhnl0 = 10
     iflag = Ref(0)
+    #=
     if istate[] < 1 || istate[] > 3
        @warn("[lsoda] illegal istate = $istate\n")
        terminate!(istate, integrator)
@@ -204,145 +221,137 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         @warn("[lsoda] istate > 1 but lsoda not initialized")
         terminate!(istate, integrator)
     end
-
+    =#
     integrator.tfirst = first(prob.tspan)
     neq = length(prob.u0)
-    # NOTE!!! this function mutates `prob.u0`
     integrator.sol = copy(prob.u0)
+    integrator.acor = copy(prob.u0)
+    integrator.savf = copy(prob.u0)
+    integrator.ewt = copy(prob.u0)
     y = integrator.sol
     integrator.n = neq
-    if istate[] == 1
-        integrator.illin = 0
-        if tout == integrator.tfirst
-            integrator.ntrep += 1
-            integrator.ntrep < 5 && return
-            @warn("[lsoda] repeated calls with istate = 1 and tout = t. run aborted.. apparent infinite loop\n")
-            return
-        end
+    integrator.illin = 0
+    if tout == integrator.tfirst
+        integrator.ntrep += 1
+        integrator.ntrep < 5 && return
+        @warn("[lsoda] repeated calls with istate = 1 and tout = t. run aborted.. apparent infinite loop\n")
+        return
     end
     ###Block b ###
-    if istate[] == 1 || istate[] == 3
-        ntrep = 0
-        if neq <= 0
-            @warn("[lsoda] neq = %d is less than 1\n", neq)
-            terminate!(istate, integrator)
-            return
-        end
-        if istate[] == 3 && neq > integrator.n
-            @warn("[lsoda] istate = 3 and neq increased\n")
-            terminate!(istate, integrator)
-            return
-        end
-        integrator.n = neq
+    #if istate[] == 1 || istate[] == 3
+    ntrep = 0
+    if neq <= 0
+        @warn("[lsoda] neq = %d is less than 1\n", neq)
+        return
     end
+    #=
+    if istate[] == 3 && neq > integrator.n
+        @warn("[lsoda] istate = 3 and neq increased\n")
+        return
+    end
+    =#
 
-    if iopt == false
-        integrator.ixpr = 0
-        integrator.mxstep = mxstp0
-        integrator.mxhnil = mxhnl0
-        integrator.hmxi = 0.0
-        integrator.hmin = 0.0
-        if (istate[] == 1)
-            h0 = 0.0
-            integrator.mxordn = MORD[1]
-            integrator.mxords = MORD[2]
-        end
+    #if iopt == false
+    integrator.ixpr = 0
+    integrator.mxstep = mxstp0
+    integrator.mxhnil = mxhnl0
+    integrator.hmxi = 0.0
+    integrator.hmin = 0.0
+    h0 = 0.0
+    integrator.mxordn = MORD[1]
+    integrator.mxords = MORD[2]
     #TODO iopt == true
-    end
-    (istate[] == 3) && (integrator.jstart = -1)
+    #(istate[] == 3) && (integrator.jstart = -1)
 
     ### Block c ###
-    if istate[] == 1
-        integrator.tn = integrator.tfirst
-        integrator.tsw = integrator.tfirst
-        integrator.maxord = integrator.mxordn
-        if tcrit != nothing
-            if (tcrit - tout) * (tout - integrator.tfirst) < 0
-                @warn("tcrit behind tout")
-                terminate!(istate, integrator)
-            end
-            if (h0 != 0.0 && (integrator.tfirst + h0 - tcrit) * h0 > 0.0)
-                h0 = tcrit - integrator.tfirst
-            end
+    #if istate[] == 1
+    integrator.tn = integrator.tfirst
+    integrator.tsw = integrator.tfirst
+    integrator.maxord = integrator.mxordn
+    if tcrit != nothing
+        if (tcrit - tout) * (tout - integrator.tfirst) < 0
+            @warn("tcrit behind tout")
         end
-        integrator.meth = 2
-        integrator.nyh = integrator.n
-        lenyh = 1 + max(integrator.mxordn, integrator.mxords)
-        integrator.yh = zeros(lenyh, integrator.nyh)
-        integrator.wm = zeros(integrator.nyh, integrator.nyh)
-        integrator.ewt = zeros(integrator.nyh)
-        integrator.savf = zeros(integrator.nyh)
-        integrator.acor = zeros(integrator.nyh)
+        if (h0 != 0.0 && (integrator.tfirst + h0 - tcrit) * h0 > 0.0)
+            h0 = tcrit - integrator.tfirst
+        end
+    end
+    integrator.meth = 2
+    integrator.nyh = integrator.n
+    lenyh = 1 + max(integrator.mxordn, integrator.mxords)
+    integrator.yh = zeros(lenyh, integrator.nyh)
+    integrator.wm = zeros(integrator.nyh, integrator.nyh)
+    integrator.ewt = zeros(integrator.nyh)
+    integrator.savf = zeros(integrator.nyh)
+    integrator.acor = zeros(integrator.nyh)
 
-        integrator.jstart = 0
-        integrator.nhnil = 0
-        integrator.nst = 0
-        integrator.nje = 0
-        integrator.nslast = 0
-        integrator.hu = 0.0
-        integrator.nqu = 0
-        integrator.mused = 0
-        integrator.miter = 0
-        integrator.ccmax = 0.3
-        integrator.maxcor = 3
-        integrator.msbp = 20
-        integrator.mxncf = 10
-        integrator.nfe = 1
-        #prob.f(du,u,p,t)
-        #(double t, double *y, double *ydot, void *data)
-        @views prob.f(integrator.yh[2,:], y, prob.p, integrator.tfirst)
-        @views for i in 1:integrator.n
-            integrator.yh[1,:][i] = y[i]
+    integrator.jstart = 0
+    integrator.nhnil = 0
+    integrator.nst = 0
+    integrator.nje = 0
+    integrator.nslast = 0
+    integrator.hu = 0.0
+    integrator.nqu = 0
+    integrator.mused = 0
+    integrator.miter = 0
+    integrator.ccmax = 0.3
+    integrator.maxcor = 3
+    integrator.msbp = 20
+    integrator.mxncf = 10
+    integrator.nfe = 1
+    #prob.f(du,u,p,t)
+    #(double t, double *y, double *ydot, void *data)
+    @views prob.f(integrator.yh[2,:], y, prob.p, integrator.tfirst)
+    @views for i in 1:integrator.n
+        integrator.yh[1,:][i] = y[i]
+    end
+    integrator.nq = 1
+    integrator.h = 1.0
+    ewset!(rtol, atol, y, integrator)
+    for i in 1:integrator.n
+        if integrator.ewt[i] <= 0
+            @warn("[lsoda] EWT[$i] = $(integrator.ewt[i]) <= 0.0")
+            terminate2!(y, t, integrator)
+            return
         end
-        integrator.nq = 1
-        integrator.h = 1.0
-        ewset!(rtol, atol, y, integrator)
-        for i in 1:integrator.n
-            if integrator.ewt[i] <= 0
-                @warn("[lsoda] EWT[$i] = $(integrator.ewt[i]) <= 0.0")
-                terminate2!(y, t, integrator)
-                return
-            end
-            integrator.ewt[i] = 1 / integrator.ewt[i]
-        end
+        integrator.ewt[i] = 1 / integrator.ewt[i]
+    end
 
-        #compute h0, the first step size,
-        if h0 == 0.0
-            tdist = abs(tout - integrator.tfirst)
-            w0 = max(abs(integrator.tfirst), abs(tout))
-            if tdist < 2 * eps() *w0
-                @warn("[lsoda] tout too close to t to start integration")
-                terminate!(istate, integrator)
-                return
-            end
-            tol = rtol[]
-            if tol <= 0.0
-                for i in 1:integrator.n
-                    ayi = abs(y[i])
-                    if ayi != 0
-                        tol = max(tol[], atol[]/ayi)
-                    end
+    #compute h0, the first step size,
+    if h0 == 0.0
+        tdist = abs(tout - integrator.tfirst)
+        w0 = max(abs(integrator.tfirst), abs(tout))
+        if tdist < 2 * eps() *w0
+            @warn("[lsoda] tout too close to t to start integration")
+            return
+        end
+        tol = rtol[]
+        if tol <= 0.0
+            for i in 1:integrator.n
+                ayi = abs(y[i])
+                if ayi != 0
+                    tol = max(tol[], atol[]/ayi)
                 end
             end
-            tol = max(tol, 100 * eps())
-            tol = min(tol, 0.001)
-            sum = vmnorm(integrator.n, integrator.yh[2,:], integrator.ewt)
-            sum = 1 / (tol * w0 * w0) + tol * sum * sum
-            h0 = 1 / sqrt(sum)
-            h0 = min(h0, tdist)
-            # h0 = h0 * ((tout - integrator.tfirst >= 0) ? 1 : -1)
-            h0 = copysign(h0, tout - integrator.tfirst)
         end
-        rh = abs(h0) * integrator.hmxi
-        rh > 1 && (h0 /= rh)
-        integrator.h = h0
-        @views for i in 1:integrator.n
-            integrator.yh[2,:][i] *= h0
-        end
+        tol = max(tol, 100 * eps())
+        tol = min(tol, 0.001)
+        sum = vmnorm(integrator.n, integrator.yh[2,:], integrator.ewt)
+        sum = 1 / (tol * w0 * w0) + tol * sum * sum
+        h0 = 1 / sqrt(sum)
+        h0 = min(h0, tdist)
+        # h0 = h0 * ((tout - integrator.tfirst >= 0) ? 1 : -1)
+        h0 = copysign(h0, tout - integrator.tfirst)
+    end
+    rh = abs(h0) * integrator.hmxi
+    rh > 1 && (h0 /= rh)
+    integrator.h = h0
+    @views for i in 1:integrator.n
+        integrator.yh[2,:][i] *= h0
     end
 
     ###Block d###
-    if (istate[] == 2 || istate[] == 3)
+    #=if (istate[] == 2 || istate[] == 3)
         integrator.nslast = integrator.nst
         if itask == 1
             if ((integrator.tn - tout) * integrator.h >= 0)
@@ -411,13 +420,61 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 end
             end
         end
+    end =#
+    #saveat t#
+    
+    if typeof(saveat) <: Number
+        if (tspan[1]:saveat:tspan[end])[end] == tspan[end]
+          saveat_vec = convert(Vector{tType},collect(tType,tspan[1]+saveat:saveat:tspan[end] - saveat))
+        else
+          saveat_vec = convert(Vector{tType},collect(tType,tspan[1]+saveat:saveat:(tspan[end])))
+        end
+    else
+        saveat_vec =  convert(Vector{tType},collect(saveat))
     end
-    #Block e#
+
+    if !isempty(saveat_vec) && saveat_vec[end] == tspan[2]
+        pop!(saveat_vec)
+    end
+
+    if !isempty(saveat_vec) && saveat_vec[1] == tspan[1]
+        save_ts = sort(unique([saveat_vec;tout]))
+    else
+        save_ts = sort(unique([integrator.tfirst;saveat_vec;tout]))
+    end
+    
+    if !isempty(saveat_vec) && saveat_vec[1] == tspan[1]
+        save_ts = sort(unique([saveat_vec;tout]))
+    else
+        save_ts = sort(unique([integrator.tfirst;saveat_vec;tout]))
+    end
+    
+    if integrator.tfirst > save_ts[1]
+        error("First saving timepoint is before the solving timespan")
+    end
+
+    if tout < save_ts[end]
+        error("Final saving timepoint is past the solving timespan")
+    end
+
+    if typeof(prob.u0) <: Number
+        u0 = [prob.u0]
+    else
+        if alias_u0
+            u0 = vec(prob.u0)
+        else
+            u0 = vec(deepcopy(prob.u0))
+        end
+    end
+
+    ures = uType[]
+    push!(ures,u0)
+    save_start ? ts = [integrator.tfirst] : ts = typeof(integrator.tfirst)[]
+
     while true
-        if (istate[] != 1 || integrator.nst != 0)
+        if integrator.nst != 0
             if ((integrator.nst - integrator.nslast) >= integrator.mxstep)
                 @warn("[lsoda] $(integrator.mxstep) steps taken before reaching tout\n")
-                istate[] = -1
                 terminate2!(y, t, integrator)
                 return
             end
@@ -425,7 +482,6 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             for i = 1:integrator.n
                 if integrator.ewt[i] <= 0
                     @warn("[lsoda] ewt[$i] = $(integrator.ewt[i]) <= 0.\n")
-                    istate[] = -6
                     terminate2!(y, t, integrator)
                     return
                 end
@@ -441,13 +497,11 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 requested for precision of machine,
                 suggested scaling factor = $tolsf
                 """)
-                terminate!(istate, integrator, integrator)
                 return
             end
             @warn("""lsoda -- at t = $(integrator.tfirst), too much accuracy requested
                      for precision of machine, suggested
                      scaling factor = $tolsf""")
-            istate[] = -2
             terminate2!(y, t, integrator)
             return
         end
@@ -465,6 +519,8 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
         end
 
         stoda(neq, prob, integrator)
+        push!(ures, copy(integrator.sol))
+        push!(ts,integrator.tn)
         #Block f#
         if integrator.kflag == 0
             integrator.init = 1
@@ -488,7 +544,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 end
                 intdy!(tout, 0, integrator.sol, iflag, integrator)
                 integrator.tfirst = tout
-                istate[] = 2
+                #istate[] = 2
                 integrator.illin = 0
                 return integrator.sol
             end
@@ -507,7 +563,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
                 if (integrator.tn - tout) * integrator.h >= 0
                     intdy!(tout, 0, integrator.sol, iflag, integrator)
                     integrator.tfirst = tout
-                    istate[] =2
+                    #istate[] =2
                     integrator.illin = 0
                     return integrator.sol
                 else
@@ -538,12 +594,10 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, ::LSODA;
             if integrator.kflag == -1
                 @warn("""at t = $(integrator.tn), tentative step size h = $(integrator.h), step nst = $(integrator.nst)\n
                  error test failed repeatedly or with fabs(h) = hmin""")
-                istate[] = -4
             end
             if integrator.kflag == -2
                 @warn("""         corrector convergence failed repeatedly or
                          with fabs(h) = hmin""")
-                istate[] = -5
             end
             big = 0
             integrator.imxer = 1
