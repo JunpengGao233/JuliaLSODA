@@ -462,12 +462,11 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     else
         save_ts = sort(unique([integrator.tfirst;saveat_vec;tout]))
     end=#
-    
-    if integrator.tfirst > saveat_vec[1]
+    if !isempty(saveat_vec) && integrator.tfirst > saveat_vec[1]
         error("First saving timepoint is before the solving timespan")
     end
 
-    if tout < saveat_vec[end]
+    if !isempty(saveat_vec) && tout < saveat_vec[end]
         error("Final saving timepoint is past the solving timespan")
     end
 
