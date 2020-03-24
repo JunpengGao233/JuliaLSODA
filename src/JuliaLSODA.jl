@@ -275,9 +275,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     integrator.tsw = integrator.tfirst
     integrator.maxord = integrator.mxordn
     if tcrit != nothing
-        if (tcrit - tout) * (tout - integrator.tfirst) < 0
+        #=if (tcrit - tout) * (tout - integrator.tfirst) < 0
             @warn("tcrit behind tout")
-        end
+        end=#
         if (h0 != 0.0 && (integrator.tfirst + h0 - tcrit) * h0 > 0.0)
             h0 = tcrit - integrator.tfirst
         end
@@ -450,8 +450,8 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     if !isempty(saveat_vec) && saveat_vec[end] == tspan[2]
         pop!(saveat_vec)
     end
-
-    if !isempty(saveat_vec) && saveat_vec[1] == tspan[1]
+    saveat_vec = sort(unique(saveat_vec))
+    #=if !isempty(saveat_vec) && saveat_vec[1] == tspan[1]
         save_ts = sort(unique([saveat_vec;tout]))
     else
         save_ts = sort(unique([integrator.tfirst;saveat_vec;tout]))
@@ -461,13 +461,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
         save_ts = sort(unique([saveat_vec;tout]))
     else
         save_ts = sort(unique([integrator.tfirst;saveat_vec;tout]))
-    end
+    end=#
     
-    if integrator.tfirst > save_ts[1]
+    if integrator.tfirst > saveat_vec[1]
         error("First saving timepoint is before the solving timespan")
     end
 
-    if tout < save_ts[end]
+    if tout < saveat_vec[end]
         error("Final saving timepoint is past the solving timespan")
     end
 
@@ -567,7 +567,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                         countsav += 1
                     end
                     push!(ures, interp)
-                    push!(ts, integrator.tn)
+                    push!(ts, tsave)
                 end
                 
                 if tcrit != nothing
@@ -607,7 +607,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                         push!(timeseries,reshape(ures[i],sizeu))
                     end
                 end
-                solreturn = DiffEqBase.build_solution(prob, alg, ures, ts,
+                solreturn = DiffEqBase.build_solution(prob, alg, ts, ures,
                 retcode = :Success)
                 return solreturn
             end
@@ -809,16 +809,16 @@ function stoda(neq::Int, prob::ODEProblem, integrator::JLSODAIntegrator)
             end
         end
         integrator.jcur = 0
-        @show stodaref.m
+        #@show stodaref.m
         if stodaref.m == 0
             dsm = stodaref.del / integrator.tesco[integrator.nq, 2]
         end
         if stodaref.m > 0
             dsm = vmnorm(integrator.n, integrator.acor, integrator.ewt) / integrator.tesco[integrator.nq,2]
         end
-        @show dsm
-        @show integrator.tn,integrator.h
-        @show integrator.hu
+        #@show dsm
+        #@show integrator.tn,integrator.h
+        #@show integrator.hu
         if dsm <= 1.0
             integrator.kflag = 0
             integrator.nst += 1
