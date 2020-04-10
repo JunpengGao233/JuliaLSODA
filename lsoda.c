@@ -1683,9 +1683,7 @@ static void stoda(int neq, double *y, _lsoda_f f, void *_data)
 		if (h != hold) {
 			rh = h / hold;
 			h = hold;
-			scaleh(&rh, &pdh);
-		}
-	}			/* if ( jstart == -1 )   */
+			scaleh(&rh, &pdh); 
 	if (jstart == -2) {
 		if (h != hold) {
 			rh = h / hold;
