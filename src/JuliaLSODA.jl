@@ -196,7 +196,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                             save_timeseries = nothing,
                             alias_u0=false,
                             tout=prob.tspan[end], rtol =1e-4, atol = 1e-6,
-                            tcrit#=tstop=#=nothing) where {uType,tType}
+                            tstops#=tstop=#=nothing) where {uType,tType}
     #DOPRINT[] = false
     @unpack f, u0, tspan, p = prob
     uElType = eltype(u0)
@@ -213,6 +213,14 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     mxstp0 = 1e5
     mxhnl0 = 10
     iflag = Ref(0)
+    countstop = 1
+    if tstops != nothing && typeof(tstops) <: Number
+        tcrit = tstops
+    elseif tstops != nothing
+        tcrit = tstops[1]
+    else
+        tcrit = nothing
+    end
     #=
     if istate[] < 1 || istate[] > 3
        @warn("[lsoda] illegal istate = $istate\n")
@@ -572,27 +580,48 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                     push!(ures, copy(integrator.sol))
                     push!(ts, integrator.tn)
                 elseif (integrator.tn - tsave) * integrator.h >= 0
-                    interp = copy(integrator.sol)
-                    intdy!(tsave, 0, interp, iflag, integrator)
-                    if tsave == saveat_vec[end]
-                        tsave = tout
+                    if tcrit != nothing && tsave < tcrit
+                        interp = copy(integrator.sol)
+                        intdy!(tsave, 0, interp, iflag, integrator)
+                        push!(ures, interp)
+                        push!(ts, tsave)
+                        if tsave == saveat_vec[end]
+                            tsave = tout
+                        else
+                            tsave = saveat_vec[countsav]
+                            countsav += 1
+                        end
                     else
-                        tsave = saveat_vec[countsav]
-                        countsav += 1
+                        interp = copy(integrator.sol)
+                        intdy!(tsave, 0, interp, iflag, integrator)
+                        push!(ures, interp)
+                        push!(ts, tsave)
+                        if tsave == saveat_vec[end]
+                            tsave = tout
+                        else
+                            tsave = saveat_vec[countsav]
+                            countsav += 1
+                        end
                     end
-                    push!(ures, interp)
-                    push!(ts, tsave)
+                end
+
+                if tstops != nothing && countstop <= length(tstops)
+                    if !(typeof(tstops) <: Number)
+                        tcrit = tstops[countstop]
+                    end
                 end
 
                 if tcrit != nothing
+                    #@show tsave, integrator.tn, integrator.h
                     hmx = abs(integrator.tn) + abs(integrator.h)
-                    ihit = abs(integrator.tn - tcrit) <= 100 * eps(typeof(integrator.tn)) *hmx
+                    ihit = abs(integrator.tn - tcrit) <= 100 * eps(typeof(integrator.tn)) * hmx
                     if Bool(ihit)
                         integrator.tn = tcrit
                         integrator.sol = integrator.yh[1,:]
                         push!(ures, integrator.sol)
                         push!(ts, integrator.tn)
                         tcrit = nothing
+                        countstop += 1
                        # successreturn(y, t, itask, ihit, tcrit, istate, integrator)
                         continue
                     end

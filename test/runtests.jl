@@ -41,6 +41,20 @@ end
     @show sol2
     #@test  sol2 ≈ reference rtol = 1e-15
 end
+
+@testset "LSODA Example tsaveat" begin
+    function fex(du, u, p, t)
+        du[1] = 1e4 * u[2] * u[3] - 0.04e0 * u[1]
+        du[3] = 3e7 * u[2] * u[2]
+        du[2] = - (du[1] + du[3])
+    end
+
+    prob = ODEProblem(fex, Float64[1.0, 0, 0], Float32[0.0,0.4e0])
+    sol2 = solve(prob, LSODA(),saveat = [0.02,0.2,0.3], atol = 1e-5, rtol = 1e-3, tstops = [0.1,0.25])
+    reference = [9.8517230200179651e-01, 3.3863992446169744e-05, 1.4793834005757239e-02]
+    @show sol2
+    #@test  sol2 ≈ reference rtol = 1e-15
+end
 #=
 @testset "Rober" begin
     function rober(du,u,p,t)
