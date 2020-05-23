@@ -55,8 +55,8 @@ end
 mutable struct JLSODAIntegrator{uType,tType,uElType,solType,Rtol,Atol}
     ccmax::uElType #in stru  #When rc differs from 1 by more than ccmax, ipup is set to miter
     el0::uElType #in stru #leading coeff
-    h::tType #in stru 
-    hmin::tType #in stru 
+    h::tType #in stru
+    hmin::tType #in stru
     hmxi::tType #in stru
     hu::tType #in stru
     rc::uElType #in stru #rc is the ratio of new to old values of the coefficient h * el[1].
@@ -96,8 +96,8 @@ mutable struct JLSODAIntegrator{uType,tType,uElType,solType,Rtol,Atol}
     msbp::Int #in stru
     mxncf::Int #in stru
     n::Int #in stru
-    nq::Int #in stru 
-    nst::Int #in stru # number of steps 
+    nq::Int #in stru
+    nst::Int #in stru # number of steps
     nfe::Int #in stru # Number of f called
     nje::Int #in stru
     nqu::Int #in stru
@@ -186,7 +186,7 @@ function successreturn!(y::Vector{Float64}, t::Ref{Float64}, itask::Int, ihit::I
     end
     #istate[] = 2
     integrator.illin = 0
-    return 
+    return
 end
 =#
 function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, timeseries=[], ts=[], ks=[];
@@ -195,19 +195,22 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                             save_start = save_everystep || isempty(saveat) || typeof(saveat) <: Number ? true : prob.tspan[1] in saveat,
                             save_timeseries = nothing,
                             alias_u0=false,
-                            tout=prob.tspan[end], rtol=Float32(1e-4), atol=Float32(1e-6),
+                            tout=prob.tspan[end], rtol =1e-4, atol = 1e-6,
                             tcrit#=tstop=#=nothing) where {uType,tType}
     #DOPRINT[] = false
     @unpack f, u0, tspan, p = prob
     uElType = eltype(u0)
     timeseries = uType[]
-    ts = eltype(tspan)[]
+    ttType = eltype(tspan)
+    ts = ttType[]
     solreturn = DiffEqBase.build_solution(prob,alg,ts,timeseries)
     integrator = JLSODAIntegrator(prob, solreturn, rtol, atol)
     integrator.opts = JLOptions(rtol, atol)
+    rType = typeof(rtol)
+    aType = typeof(atol)
     integrator.pdnorm = 0
     integrator.jtyp = 2
-    mxstp0 = 500
+    mxstp0 = 1e5
     mxhnl0 = 10
     iflag = Ref(0)
     #=
@@ -263,7 +266,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     integrator.mxhnil = mxhnl0
     integrator.hmxi = 0.0
     integrator.hmin = 0.0
-    h0 = 0.0
+    h0 = ttType(0.0)
     integrator.mxordn = MORD[1]
     integrator.mxords = MORD[2]
     #TODO iopt == true
@@ -278,7 +281,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
         #=if (tcrit - tout) * (tout - integrator.tfirst) < 0
             @warn("tcrit behind tout")
         end=#
-        if (h0 != 0.0 && (integrator.tfirst + h0 - tcrit) * h0 > 0.0)
+        if (h0 != 0.0 && (integrator.tfirst + h0 - tcrit) * h0 > tType(0.0))
             h0 = tcrit - integrator.tfirst
         end
     end
@@ -327,7 +330,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     if h0 == 0.0
         tdist = abs(tout - integrator.tfirst)
         w0 = max(abs(integrator.tfirst), abs(tout))
-        if tdist < 2 * eps(typeof(integrator.tn)) *w0
+        if tdist < 2 * eps(ttType) * w0
             @warn("[lsoda] tout too close to t to start integration")
             return
         end
@@ -348,15 +351,21 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                 end
             end
         end
-        tol = max(tol, 100 * eps(typeof(integrator.opts.rtol)))
-        tol = min(tol, 0.001)
-        @show typeof(tol)
+        if isa(tol,rType)
+            tol = max(tol, 100 * eps(rType))
+            tol = min(tol, rType(0.001))
+        else
+            tol = max(tol, 100 * eps(aType))
+            tol = min(tol, aType(0.001))
+        end
+        #@show typeof(tol)
         sum = vmnorm(integrator.n, integrator.yh[2,:], integrator.ewt)
+        #@show typeof(sum),111111,integrator.ewt
         sum = 1 / (tol * w0 * w0) + tol * sum * sum
-        @show typeof(sum),sum
-        @show typeof(integrator.yh[2,:])
-        @show integrator.ewt, typeof(tol)
-        h0 = 1 / sqrt(sum)
+        #@show typeof(sum),sum
+        #@show typeof(integrator.yh[2,:])
+        #@show integrator.ewt, typeof(tol)
+        h0 = ttType(1 / sqrt(sum))
         h0 = min(h0, tdist)
         # h0 = h0 * ((tout - integrator.tfirst >= 0) ? 1 : -1)
         h0 = copysign(h0, tout - integrator.tfirst)
@@ -367,7 +376,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     @views for i in 1:integrator.n
         integrator.yh[2,:][i] *= h0
     end
-    @show typeof(h0)
+    #@show typeof(h0)
     ###Block d###
     #=if (istate[] == 2 || istate[] == 3)
         integrator.nslast = integrator.nst
@@ -441,7 +450,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     end =#
     #saveat t#
     ttype = eltype(tspan)
-    @show saveat
+    #@show saveat
     if typeof(saveat) <: Number
         if (tspan[1]:saveat:tspan[end])[end] == tspan[end]
           saveat_vec = convert(Vector{ttype},collect(ttype,tspan[1]+saveat:saveat:tspan[end] - saveat))
@@ -456,13 +465,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
         pop!(saveat_vec)
     end
     saveat_vec = sort(unique(saveat_vec))
-    @show saveat_vec
+    #@show saveat_vec
     #=if !isempty(saveat_vec) && saveat_vec[1] == tspan[1]
         save_ts = sort(unique([saveat_vec;tout]))
     else
         save_ts = sort(unique([integrator.tfirst;saveat_vec;tout]))
     end
-    
+
     if !isempty(saveat_vec) && saveat_vec[1] == tspan[1]
         save_ts = sort(unique([saveat_vec;tout]))
     else
@@ -574,7 +583,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                     push!(ures, interp)
                     push!(ts, tsave)
                 end
-                
+
                 if tcrit != nothing
                     hmx = abs(integrator.tn) + abs(integrator.h)
                     ihit = abs(integrator.tn - tcrit) <= 100 * eps(typeof(integrator.tn)) *hmx
@@ -616,7 +625,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                 retcode = :Success)
                 return solreturn
             end
-            
+
 
             #if itask == 2
             #    passtoy!(integrator)
@@ -644,7 +653,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                     hmx = abs(integrator.tn) + abs(integrator.h)
                     ihit = abs(tn - tcrit) <= 100 * eps() *hmx
                     if Bool(ihit)
-                        
+
                        # successreturn(y, t, itask, ihit, tcrit, istate, integrator)
                         return integrator.sol
                     end
@@ -1056,7 +1065,8 @@ function resetcoeff(integrator::JLSODAIntegrator)
 end
 
 function vmnorm(n::Int, v::Vector, w::Vector)
-    vm = 0.0
+    eltypev = eltype(v)
+    vm = eltypev(0.0)
     for i in 1:n
         vm = max(vm, abs(v[i]) * w[i])
     end

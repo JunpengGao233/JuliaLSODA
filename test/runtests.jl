@@ -7,16 +7,25 @@ using JuliaLSODA, Test
         du[2] = - (du[1] + du[3])
     end
 
-    prob = ODEProblem(fex, Float32[1.0, 0, 0], Float32[0.0,0.4e0])
-    sol2 = solve(prob, LSODA(),saveat=0.1)
+    prob = ODEProblem(fex, [1.0, 0, 0], [0.0,0.4e0])
+    sol2 = solve(prob, LSODA())
     reference = [9.8517230200179651e-01, 3.3863992446169744e-05, 1.4793834005757239e-02]
-<<<<<<< HEAD
-#    @show sol2
-    #@test prob.u0 ≈ reference rtol = 1e-15
-=======
+    @test  sol2.u[end] ≈ reference rtol = 1e-15
+end
+
+@testset "generic_type" begin
+    function fex(du, u, p, t)
+        du[1] = 1e4 * u[2] * u[3] - 0.04e0 * u[1]
+        du[3] = 3e7 * u[2] * u[2]
+        du[2] = - (du[1] + du[3])
+    end
+
+    prob = ODEProblem(fex, Float32[1.0, 0, 0], Float64[0.0,0.4e0])
+    sol2 = solve(prob, LSODA(),saveat=0.1)
+    @show typeof(sol2.t)
     @show sol2
-    #@test  sol2 ≈ reference rtol = 1e-15
->>>>>>> origin/generic_type
+    reference = Float32[9.8517230200179651e-01, 3.3863992446169744e-05, 1.4793834005757239e-02]
+    @test  sol2.u[end] ≈ reference rtol = 1e-5
 end
 
 @testset "LSODA Example tsaveat" begin
@@ -26,9 +35,10 @@ end
         du[2] = - (du[1] + du[3])
     end
 
-    prob = ODEProblem(fex, [1.0, 0, 0], (0.0,0.4e0))
-    sol2 = solve(prob, LSODA(),saveat = [0.02,0.2,0.3])
+    prob = ODEProblem(fex, Float64[1.0, 0, 0], Float32[0.0,0.4e0])
+    sol2 = solve(prob, LSODA(),saveat = [0.02,0.2,0.3], atol = 1e-5, rtol = 1e-3)
     reference = [9.8517230200179651e-01, 3.3863992446169744e-05, 1.4793834005757239e-02]
+    @show sol2
     #@test  sol2 ≈ reference rtol = 1e-15
 end
 #=
