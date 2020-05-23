@@ -221,6 +221,9 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     else
         tcrit = nothing
     end
+
+
+
     #=
     if istate[] < 1 || istate[] > 3
        @warn("[lsoda] illegal istate = $istate\n")
@@ -504,7 +507,6 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     end
 
     ures = uType[]
-    push!(ures,u0)
     #save_start ? tsave = integrator.tfirst : tsave = typeof(integrator.tfirst)
     tsave = integrator.tfirst
     countsav = 1
@@ -574,13 +576,14 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                     @warn("at t = $(integrator.tn), tentative step size h = $(integrator.h), step nst = $(integrator.nst)\n")
                 end
             end
-            #itask == 1
+            #itask ==
+
             if (integrator.tn - tout) * integrator.h < 0
                 if save_everystep
                     push!(ures, copy(integrator.sol))
                     push!(ts, integrator.tn)
                 elseif (integrator.tn - tsave) * integrator.h >= 0
-                    if tcrit != nothing && tsave < tcrit
+                    if !(tcrit != nothing && tsave > tcrit)
                         interp = copy(integrator.sol)
                         intdy!(tsave, 0, interp, iflag, integrator)
                         push!(ures, interp)
@@ -591,37 +594,24 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                             tsave = saveat_vec[countsav]
                             countsav += 1
                         end
-                    else
-                        interp = copy(integrator.sol)
-                        intdy!(tsave, 0, interp, iflag, integrator)
-                        push!(ures, interp)
-                        push!(ts, tsave)
-                        if tsave == saveat_vec[end]
-                            tsave = tout
-                        else
-                            tsave = saveat_vec[countsav]
-                            countsav += 1
-                        end
-                    end
-                end
-
-                if tstops != nothing && countstop <= length(tstops)
-                    if !(typeof(tstops) <: Number)
-                        tcrit = tstops[countstop]
                     end
                 end
 
                 if tcrit != nothing
-                    #@show tsave, integrator.tn, integrator.h
                     hmx = abs(integrator.tn) + abs(integrator.h)
-                    ihit = abs(integrator.tn - tcrit) <= 100 * eps(typeof(integrator.tn)) * hmx
+                    ihit = abs(integrator.tn - tcrit) <= 100 * eps(typeof(integrator.tn)) *hmx
                     if Bool(ihit)
                         integrator.tn = tcrit
                         integrator.sol = integrator.yh[1,:]
                         push!(ures, integrator.sol)
                         push!(ts, integrator.tn)
-                        tcrit = nothing
                         countstop += 1
+
+                        if countstop <= length(tstops)
+                            tcrit = tstops[countstop]
+                        else
+                            tcrit = nothing
+                        end
                        # successreturn(y, t, itask, ihit, tcrit, istate, integrator)
                         continue
                     end
