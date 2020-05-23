@@ -196,7 +196,7 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                             save_timeseries = nothing,
                             alias_u0=false,
                             tout=prob.tspan[end], rtol =1e-4, atol = 1e-6,
-                            tcrit#=tstop=#=nothing) where {uType,tType}
+                            tstops#=tstop=#=nothing) where {uType,tType}
     #DOPRINT[] = false
     @unpack f, u0, tspan, p = prob
     uElType = eltype(u0)
@@ -213,6 +213,17 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     mxstp0 = 1e5
     mxhnl0 = 10
     iflag = Ref(0)
+    countstop = 1
+    if tstops != nothing && typeof(tstops) <: Number
+        tcrit = tstops
+    elseif tstops != nothing
+        tcrit = tstops[1]
+    else
+        tcrit = nothing
+    end
+
+
+
     #=
     if istate[] < 1 || istate[] > 3
        @warn("[lsoda] illegal istate = $istate\n")
@@ -496,7 +507,6 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
     end
 
     ures = uType[]
-    push!(ures,u0)
     #save_start ? tsave = integrator.tfirst : tsave = typeof(integrator.tfirst)
     tsave = integrator.tfirst
     countsav = 1
@@ -566,22 +576,25 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                     @warn("at t = $(integrator.tn), tentative step size h = $(integrator.h), step nst = $(integrator.nst)\n")
                 end
             end
-            #itask == 1
+            #itask ==
+
             if (integrator.tn - tout) * integrator.h < 0
                 if save_everystep
                     push!(ures, copy(integrator.sol))
                     push!(ts, integrator.tn)
                 elseif (integrator.tn - tsave) * integrator.h >= 0
-                    interp = copy(integrator.sol)
-                    intdy!(tsave, 0, interp, iflag, integrator)
-                    if tsave == saveat_vec[end]
-                        tsave = tout
-                    else
-                        tsave = saveat_vec[countsav]
-                        countsav += 1
+                    if !(tcrit != nothing && tsave > tcrit)
+                        interp = copy(integrator.sol)
+                        intdy!(tsave, 0, interp, iflag, integrator)
+                        push!(ures, interp)
+                        push!(ts, tsave)
+                        if tsave == saveat_vec[end]
+                            tsave = tout
+                        else
+                            tsave = saveat_vec[countsav]
+                            countsav += 1
+                        end
                     end
-                    push!(ures, interp)
-                    push!(ts, tsave)
                 end
 
                 if tcrit != nothing
@@ -592,7 +605,13 @@ function DiffEqBase.__solve(prob::ODEProblem{uType,tType,true}, alg::LSODA, time
                         integrator.sol = integrator.yh[1,:]
                         push!(ures, integrator.sol)
                         push!(ts, integrator.tn)
-                        tcrit = nothing
+                        countstop += 1
+
+                        if countstop <= length(tstops)
+                            tcrit = tstops[countstop]
+                        else
+                            tcrit = nothing
+                        end
                        # successreturn(y, t, itask, ihit, tcrit, istate, integrator)
                         continue
                     end
